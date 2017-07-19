@@ -94,6 +94,158 @@ plt.ylim(-50, 50)
 plt.show()
 '''
 
+# for p1, p2 in flow:
+# point3D = self.reconstructPoint(p1, p2)
+# A, B, C, D = plane[0], plane[1], plane[2], plane[3]
+# x, y, z = point3D[0], point3D[1], point3D[2]
+# if (np.any(A * x + B * y + C * z + D) < 3):
+#    print("kek")
+#    road_pts1.append(p1)
+#    road_pts2.append(p2)
+'''
+point1 = [point1[0], point1[1]]
+point2 = [point2[0], point2[1]]
+point3D = self.reconstructPoint(point1, point2)
+A, B, C, D = plane[0], plane[1], plane[2], plane[3]
+x, y, z = point3D[0], point3D[1], point3D[2]
+if(np.any(A*x + B*y + C*z + D) < 3):
+    print("kek")
+    road_pts1.append(point1)
+    road_pts2.append(point2)
+'''
+# return road_pts1, road_pts2
+
+
+
+
+'''
+    def __init__(self, img1, img2, size, read=False):
+        if (not read):
+            self.img1 = cv2.imread(img1)
+            self.img1 = cv2.blur(self.img1, cnst.gaussWin)
+        else:
+            self.img1 = img1
+        #self.img1 = cv2.blur(self.img1, cnst.gaussWin)
+        #self.img1 = cv2.threshold(self.img1,127,255,cv2.THRESH_BINARY)
+        #self.img1 = cv2.pyrMeanShiftFiltering(self.img1, cnst.meanShiftN, cnst.meanShiftN)
+        if (not read):
+            self.img2 = cv2.imread(img2)
+            self.img2 = cv2.blur(self.img2, cnst.gaussWin)
+        else:
+            self.img2 = img2
+        #self.img2 = cv2.blur(self.img2, cnst.gaussWin)
+        #self.img2 = cv2.threshold(self.img2,127,255,cv2.THRESH_BINARY)
+        #self.img2 = cv2.pyrMeanShiftFiltering(self.img2, cnst.meanShiftN, cnst.meanShiftN)
+        self.magicConstant = cnst.pointToSelect
+        self.imgSize = size
+
+    def cornerHarris(self):
+        img = self.img2
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        gray = np.float32(gray)
+        # 0.04
+        dst = cv2.cornerHarris(gray, 4, 3, 0.09)
+        dst = cv2.dilate(dst, None)
+        ret, dst = cv2.threshold(dst, 0.01 * dst.max(), 255, 0)
+        dst = np.uint8(dst)
+
+        ret, labels, stats, centroids = cv2.connectedComponentsWithStats(dst)
+
+        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 0.001)
+        corners = cv2.cornerSubPix(gray, np.float32(centroids), (5, 5), (-1, -1), criteria)
+
+        res = np.hstack((centroids, corners))
+        res = np.int0(res)
+        try:
+            img[res[:, 1], res[:, 0]] = [0, 0, 255]
+            img[res[:, 3], res[:, 2]] = [0, 255, 0]
+        except Exception:
+            print("kek")
+            corners = corners[:, np.newaxis]
+            return corners
+
+        # cv2.imwrite('harris.png',img)
+        corners = corners[:, np.newaxis]
+        return corners
+
+ANOTHER
+def rectangles(clusters):
+    rects = []
+    for cluster in clusters:
+        maxX = max(cluster, key=lambda p: p[0])[0]
+        maxY = max(cluster, key=lambda p: p[1])[1]
+        minX = min(cluster, key=lambda p: p[0])[0]
+        minY = min(cluster, key=lambda p: p[1])[1]
+        rects.append([(minX, maxY), (maxX, minY)])
+        #rects.append(cv2.rectangle(frame1, (minX, maxY), (maxX, minY), color, 3))
+    return rects
+
+
+    def lucasKanade(self):
+        feature_params = dict(maxCorners=100,
+                              qualityLevel=0.3,
+                              minDistance=7,
+                              blockSize=7)
+        lk_params = dict(winSize=(15, 15),
+                         maxLevel=2,
+                         criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
+        img_yuv = cv2.cvtColor(self.img1, cv2.COLOR_BGR2YUV)
+        img_yuv[:, :, 0] = cv2.equalizeHist(img_yuv[:, :, 0])
+        img_output = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
+        self.img1 = img_output
+
+        img_yuv = cv2.cvtColor(self.img2, cv2.COLOR_BGR2YUV)
+        img_yuv[:, :, 0] = cv2.equalizeHist(img_yuv[:, :, 0])
+        img_output = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
+        self.img2 = img_output
+
+
+        old_frame = self.img1
+        frame = self.img2
+        size = self.img1.shape
+        newh = size[0] // 3
+        old_frame = old_frame[newh: size[0], 1: size[1]]
+        frame = frame[newh: size[0], 1: size[1]]
+        old_gray = cv2.cvtColor(old_frame, cv2.COLOR_BGR2GRAY)
+        frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        old_frame = self.img1
+        frame = self.img2
+        old_gray = cv2.cvtColor(old_frame, cv2.COLOR_BGR2GRAY)
+        frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        cv2.imwrite('kek.png', old_frame)
+        #p0 = cv2.goodFeaturesToTrack(old_gray, mask = None, **feature_params)
+        p0 = self.cornerHarris()
+
+        mask = np.zeros_like(old_frame)
+        p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_gray, p0, None, **lk_params)
+        good_new = p1[st == 1]
+        good_old = p0[st == 1]
+
+        for i, (new, old) in enumerate(zip(good_new, good_old)):
+            a, b = new.ravel()
+            c, d = old.ravel()
+            mask = cv2.line(mask, (a, b), (c, d), [0, 0, 255], 2)
+            frame = cv2.circle(frame, (a, b), 2, [0, 0, 255], -1)
+        img = cv2.add(frame, mask)
+        # cv2.imwrite('opticalFlow.jpg', img)
+        return good_new, good_old
+    '''
+
+
+
+
+
+
+
+
+
+
+
+
+
 ''' two sets intersection
 pts1set = set([tuple(x) for x in pts1])
 pts2set = set([tuple(x) for x in pts2])

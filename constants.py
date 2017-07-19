@@ -7,10 +7,11 @@ class MagicConstants:
         s = 4
         self.gaussWin = (s, s)
         self.meanShiftN = 16
-        self.pointToSelect = 42
+        self.pointToSelect = 58
         self.subtractGNum = 20
         self.reconstructEPS = 0.00001
         self.largeModuleCnst = 0.3
         self.roadPlanePts = 6
         self.critAlpha = 0.5
         self.minPinClust = 5
+        self.distToRoad = 3

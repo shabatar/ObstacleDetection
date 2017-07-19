@@ -1,6 +1,46 @@
 import cv2
 import numpy as np
 
+def plot3Dcloud(points3Dx, points3Dy, points3Dz, point, normal):
+    import matplotlib.pyplot as plt
+    xmin = min(points3Dx)[0]
+    ymin = min(points3Dy)[0]
+    zmin = min(points3Dz)[0]
+    zmax = max(points3Dz)[0]
+    xmax = max(points3Dx)[0]
+    ymax = max(points3Dy)[0]
+    from mpl_toolkits.mplot3d import Axes3D
+    # d and we're set
+    point = np.array(point)
+    normal = np.array(normal)
+    d = -point.dot(normal)
+    if (xmin == xmax or ymin == ymax or zmin == zmax):
+        return 0
+    # create x,y
+    xx, yy = np.meshgrid(np.arange(xmin, xmax), np.arange(ymin, ymax))
+
+    # calculate corresponding z
+    z = (-normal[0] * xx - normal[1] * yy - d) * 1. / normal[2]
+
+    # plot the surface
+    plt3d = plt.figure().gca(projection='3d')
+    plt3d.plot_surface(xx, yy, z, alpha=0.5)
+
+    ax = plt.gca()
+    ax.hold(True)
+
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(points3Dx, points3Dy, points3Dz, c='r', marker='*')
+    plt.savefig('fig.png')
+    #print(xmin)
+    plt.xlim(xmin, xmax)
+    #print(ymin)
+    plt.ylim(ymin, ymax)
+    #print(zmin)
+    ax.set_zlim(zmin, zmax)
+    plt.show()
+
 class Drawer:
     def __init__(self, img1, img2, color=[255,0,0]):
         self.img1 = img1

@@ -7,26 +7,20 @@ from constants import MagicConstants
 
 cnst = MagicConstants()
 
-class PointSelector:
-    def __init__(self, img1, img2, size, read=False):
+class OpticalFlow:
+    def __init__(self, img1, img2, read, blur):
         if (not read):
             self.img1 = cv2.imread(img1)
-            self.img1 = cv2.blur(self.img1, cnst.gaussWin)
+            self.img2 = cv2.imread(img2)
         else:
             self.img1 = img1
-        #self.img1 = cv2.blur(self.img1, cnst.gaussWin)
-        #self.img1 = cv2.threshold(self.img1,127,255,cv2.THRESH_BINARY)
-        #self.img1 = cv2.pyrMeanShiftFiltering(self.img1, cnst.meanShiftN, cnst.meanShiftN)
-        if (not read):
-            self.img2 = cv2.imread(img2)
-            self.img2 = cv2.blur(self.img2, cnst.gaussWin)
-        else:
             self.img2 = img2
-        #self.img2 = cv2.blur(self.img2, cnst.gaussWin)
-        #self.img2 = cv2.threshold(self.img2,127,255,cv2.THRESH_BINARY)
-        #self.img2 = cv2.pyrMeanShiftFiltering(self.img2, cnst.meanShiftN, cnst.meanShiftN)
-        self.magicConstant = cnst.pointToSelect
-        self.imgSize = size
+        if (blur):
+            self.img1 = cv2.blur(self.img1, cnst.gaussWin)
+            self.img2 = cv2.blur(self.img2, cnst.gaussWin)
+        # initial points
+        self.pts1 = []
+        self.pts2 = []
 
     def cornerHarris(self):
         img = self.img2
@@ -86,17 +80,17 @@ class PointSelector:
         old_gray = cv2.cvtColor(old_frame, cv2.COLOR_BGR2GRAY)
         frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         '''
-        old_frame = self.img1
-        frame = self.img2
-        old_gray = cv2.cvtColor(old_frame, cv2.COLOR_BGR2GRAY)
-        frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        oldFrame = self.img1
+        newFrame = self.img2
+        oldGray = cv2.cvtColor(oldFrame, cv2.COLOR_BGR2GRAY)
+        frameGray = cv2.cvtColor(newFrame, cv2.COLOR_BGR2GRAY)
 
-        cv2.imwrite('kek.png', old_frame)
+        cv2.imwrite('kek.png', oldFrame)
         #p0 = cv2.goodFeaturesToTrack(old_gray, mask = None, **feature_params)
         p0 = self.cornerHarris()
 
-        mask = np.zeros_like(old_frame)
-        p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_gray, p0, None, **lk_params)
+        mask = np.zeros_like(oldFrame)
+        p1, st, err = cv2.calcOpticalFlowPyrLK(oldGray, frameGray, p0, None, **lk_params)
         good_new = p1[st == 1]
         good_old = p0[st == 1]
 
@@ -104,42 +98,49 @@ class PointSelector:
             a, b = new.ravel()
             c, d = old.ravel()
             mask = cv2.line(mask, (a, b), (c, d), [0, 0, 255], 2)
-            frame = cv2.circle(frame, (a, b), 2, [0, 0, 255], -1)
-        img = cv2.add(frame, mask)
+            newFrame = cv2.circle(newFrame, (a, b), 2, [0, 0, 255], -1)
+        img = cv2.add(newFrame, mask)
         # cv2.imwrite('opticalFlow.jpg', img)
+        self.pts1 = good_old
+        self.pts2 = good_new
         return good_new, good_old
+
+class PointSelector:
+    def __init__(self, img1, img2, read=False, blur=True):
+        self.optFlow = OpticalFlow(img1, img2, read, blur)
 
     def moduleVect(self, vector):
         return math.sqrt(vector[0] ** 2 + vector[1] ** 2)
 
     def largeModule(self, vector):
-        return (self.moduleVect(vector) > cnst.largeModuleCnst * self.imgSize[0] or self.moduleVect(vector) > cnst.largeModuleCnst * self.imgSize[1])
+        return (self.moduleVect(vector) > cnst.largeModuleCnst * self.optFlow.img1.shape[0] or
+                self.moduleVect(vector) > cnst.largeModuleCnst * self.optFlow.img1.shape[1])
 
     def select(self):
         # imgs, good_old_points in imgs, good_new_points in imgs
         # returns good_enough_old_p and new
-        good_new, good_old = self.lucasKanade()
+        good_new, good_old = self.optFlow.lucasKanade()
         good_new1 = [[point[0], point[1]] for point in good_new]
         good_old1 = [[point[0], point[1]] for point in good_old]
-        # remove too large vectors
-        #for new, old in zip(good_new1, good_old1):
-        #    vx = old[0] - new[0]
-        #    vy = old[1] - new[1]
-        #    v = [vx, vy]
-        #    if (self.largeModule(v)):
-        #        good_new1.remove(new)
-        #        good_old1.remove(old)
-        goodnum = self.magicConstant
-        img1 = self.img1
-        img2 = self.img2
+        #remove too large vectors
+        for new, old in zip(good_new1, good_old1):
+            vx = old[0] - new[0]
+            vy = old[1] - new[1]
+            v = [vx, vy]
+            if (self.largeModule(v)):
+                good_new1.remove(new)
+                good_old1.remove(old)
+        goodnum = cnst.pointToSelect
+        img1 = self.optFlow.img1
+        img2 = self.optFlow.img2
         size = img2.shape
         newh = size[0] // 3
-        self.top_img1 = self.img1[1: newh, 1: size[1]]
-        self.mid_img1 = self.img1[newh: newh * 2, 1: size[1]]
-        self.bot_img1 = self.img1[newh * 2: size[0], 1: size[1]]
-        self.top_img2 = self.img2[1: newh, 1: size[1]]
-        self.mid_img2 = self.img2[newh: newh * 2, 1: size[1]]
-        self.bot_img2 = self.img2[newh * 2: size[0], 1: size[1]]
+        self.top_img1 = img1[1: newh, 1: size[1]]
+        self.mid_img1 = img1[newh: newh * 2, 1: size[1]]
+        self.bot_img1 = img1[newh * 2: size[0], 1: size[1]]
+        self.top_img2 = img2[1: newh, 1: size[1]]
+        self.mid_img2 = img2[newh: newh * 2, 1: size[1]]
+        self.bot_img2 = img2[newh * 2: size[0], 1: size[1]]
         pts = {}
         t0 = []
         m0 = []
@@ -188,11 +189,18 @@ class PointSelector:
             mask = cv2.line(mask, (a, b), (c, d), [255, 0, 0], 2)
             img2 = cv2.circle(img2, (a, b), 2, [255, 0, 0], -1)
         img = cv2.add(img2, mask)
+        print(road)
         cv2.imwrite('goodEnough.jpg', img)
-        good_new, good_old = zip(*t0)
+        if(t0):
+            good_new, good_old = zip(*t0)
         #comment above to do nothing
-
-        road_new, road_old = zip(*road)
+        if (road):
+            road_new, road_old = zip(*road)
         #if (not good_new or not good_old):
         #    return (0,0)
+        good_old = np.int32(good_old)
+        good_new = np.int32(good_new)
+
+        road_new = np.int32(road_new)
+        road_old = np.int32(road_old)
         return good_new, good_old, road_new, road_old

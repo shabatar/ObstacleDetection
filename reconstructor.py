@@ -1,14 +1,54 @@
 import cv2
 import numpy as np
 from constants import MagicConstants
-from pointselector import PointSelector
-from drawer import Drawer
+from drawer import *
+import random
+import math
+
 cnst = MagicConstants()
 class Reconstructor:
     def __init__(self, cam, rotMat, trVect):
         self.cam = cam
         self.rotMat = rotMat
         self.trVect = trVect
+
+    def planeByPoints(self, pt1, pt2, pt3):
+        x1,y1,z1 = pt1[0], pt1[1], pt1[2]
+        x2,y2,z2 = pt2[0], pt2[1], pt2[2]
+        x3,y3,z3 = pt3[0], pt3[1], pt3[2]
+        # Ax+By+Сz+D=0
+        # det{ {x-x1, y-y1, z-z1}, {x2-x1, y2-y1, z2-z1}, {x3-x1, y3-y1, z3-z1} } = 0
+        # x2-x1 = a2, y2-y1 = b2, z2-z1 = c2 etc.
+        A = (y2-y1)*(z3-z1)-(y3-y1)*(z2-z1)
+        B = (z2-z1)*(x3-x1)-(z3-z1)*(x2-x1)
+        C = (x2-x1)*(y3-y1)-(x3-x1)*(y2-y1)
+        D = x1*(-A)+y1*(-B)+z1*(-C)
+        return A,B,C,D
+
+    def distPlanePt(self, plane, pt):
+        ptx, pty, ptz = pt[0], pt[1], pt[2]
+        A, B, C, D = plane[0], plane[1], plane[2], plane[3]
+        return abs(A*ptx + B*pty + C*ptz + D) / math.sqrt(A**2 + B**2 + C**2)
+
+    def planeFitRansac(self, points, equation=True):
+        best3pts = []
+        bestPlane = 0, 0, 0, 0
+        just3pts = random.sample(points, 3)
+        plane = self.planeByPoints(just3pts[0], just3pts[1], just3pts[2])
+        sumBest = sum(self.distPlanePt(plane, pt)**2 for pt in points)
+        for i in range(0, 50):
+            just3pts = random.sample(points, 3)
+            plane = self.planeByPoints(just3pts[0], just3pts[1], just3pts[2])
+            sumofSqDist = sum([self.distPlanePt(plane, pt) for pt in points])
+            if sumofSqDist < sumBest:
+                sumBest = sumofSqDist
+                best3pts = just3pts
+                bestPlane = plane
+        if(equation == False):
+            point = random.sample(best3pts, 1)
+            normal = bestPlane[0], bestPlane[1], bestPlane[2]
+            return point, normal
+        return bestPlane
 
     def PCA(self, data, correlation=False, sort=True):
         mean = np.mean(data, axis=0)
@@ -133,46 +173,8 @@ class Reconstructor:
         point, normal = self.bestFitPlane(pts3Ds, False)
         equation = self.bestFitPlane(pts3Ds)
         # print(plane)
-        #self.plot3Dcloud(points3Dx,points3Dy,points3Dz, point, normal)
+        #plot3Dcloud(points3Dx, points3Dy, points3Dz, point, normal)
         return equation
-
-    def plot3Dcloud(self, points3Dx, points3Dy, points3Dz, point, normal):
-        import matplotlib.pyplot as plt
-        xmin = min(points3Dx)[0]
-        ymin = min(points3Dy)[0]
-        zmin = min(points3Dz)[0]
-        zmax = max(points3Dz)[0]
-        xmax = max(points3Dx)[0]
-        ymax = max(points3Dy)[0]
-        from mpl_toolkits.mplot3d import Axes3D
-        # d and we're set
-        d = -point.dot(normal)
-        if(xmin == xmax or ymin == ymax or zmin == zmax):
-            return 0
-        # create x,y
-        xx, yy = np.meshgrid(np.arange(xmin, xmax), np.arange(ymin, ymax))
-
-        # calculate corresponding z
-        z = (-normal[0] * xx - normal[1] * yy - d) * 1. / normal[2]
-
-        # plot the surface
-        plt3d = plt.figure().gca(projection='3d')
-        plt3d.plot_surface(xx, yy, z, alpha=0.5)
-
-        ax = plt.gca()
-        ax.hold(True)
-
-        # fig = plt.figure()
-        # ax = fig.add_subplot(111, projection='3d')
-        ax.scatter(points3Dx, points3Dy, points3Dz, c='r', marker='*')
-        plt.savefig('fig.png')
-        print(xmin)
-        plt.xlim(xmin, xmax)
-        print(ymin)
-        plt.ylim(ymin, ymax)
-        print(zmin)
-        ax.set_zlim(zmin, zmax)
-        plt.show()
 
     def pixelOnRoad(self, botimg1, botimg2, plane):
         road_pts1 = []
@@ -206,7 +208,7 @@ class Reconstructor:
                     continue
                 ev = ev[0]
                 #print(ev)
-                if (abs(ev) < 0.1):
+                if (abs(ev) < cnst.distToRoad):
                     #print("kek")
                     #print(abs(ev - 1))
                     #print(ev)
