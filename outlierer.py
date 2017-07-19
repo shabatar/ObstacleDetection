@@ -5,7 +5,6 @@ import math
 from constants import MagicConstants
 
 cnst = MagicConstants()
-
 class Outlierer:
     #def __init__(self):
     #    self.outEss = outEss

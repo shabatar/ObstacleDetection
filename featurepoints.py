@@ -11,30 +11,79 @@ from drawer import Drawer
 from outlierer import Outlierer
 from camera import Camera
 from constants import MagicConstants
+from tracker import Tracker
+from reconstructor import Reconstructor
+from cluster import Cluster
 
+clst = Cluster()
+tracker = Tracker()
 cnst = MagicConstants()
-route = "data/0000000*.png"
+route = "data/*.png"
+
+# set parameters for camera (set of data)
+calibMat = np.array([
+    [9.895267e+02, 0.000000e+00, 7.020000e+02],
+    [0.000000e+00, 9.878386e+02, 2.455590e+02],
+    [0.000000e+00, 0.000000e+00, 1.000000e+00]
+])
+size = (1392, 512)
+distCoeffs = (-3.728755e-01, 2.037299e-01, 2.219027e-03, 1.383707e-03, -7.233722e-02)
+focal = 9.895267e+02
+pp = (7.020000e+02, 2.455590e+02)
+
+# data1
+'''
+corner_dist = 9.950000e-02
+size = (1.392000e+03,5.120000e+02)
+calibMat = np.array([
+    [9.842439e+02, 0.000000e+00, 6.900000e+02],
+    [0.000000e+00, 9.808141e+02, 2.331966e+02],
+    [0.000000e+00, 0.000000e+00, 1.000000e+00]
+])
+distCoeffs = (-3.728755e-01, 2.037299e-01, 2.219027e-03, 1.383707e-03, -7.233722e-02)
+focal = 9.842439e+02
+pp = (6.900000e+02,2.331966e+02)
+'''
+# data2
+'''
+size = (1.392000e+03, 5.120000e+02)
+calibMat = np.array([
+    [9.799200e+02, 0.000000e+00, 6.900000e+02],
+    [0.000000e+00, 9.741183e+02, 2.486443e+02],
+    [0.000000e+00, 0.000000e+00, 1.000000e+00]
+])
+distCoeffs = (-3.745594e-01, 2.049385e-01, 1.110145e-03, 1.379375e-03, -7.084798e-02)
+focal = 9.799200e+02
+pp = (6.900000e+02, 2.486443e+02)
+
+# data3
+size = (1.392000e+03, 5.120000e+02)
+calibMat = np.array([
+    [9.842439e+02, 0.000000e+00, 6.900000e+02],
+    [0.000000e+00, 9.808141e+02, 2.331966e+02],
+    [0.000000e+00, 0.000000e+00, 1.000000e+00]
+])
+distCoeffs = (-3.728755e-01, 2.037299e-01, 2.219027e-03, 1.383707e-03, -7.233722e-02)
+focal = 9.842439e+02
+pp = (6.900000e+02,2.331966e+02)
+'''
+'''
+# data5
+size = (2048, 1024)
+calibMat = np.array([
+    [2268.36, 0.000000e+00, 1048.64],
+    [0.000000e+00, 2312.0, 519.27],
+    [0.000000e+00, 0.000000e+00, 1.000000e+00]
+])
+distCoeffs = (-3.728755e-01, 2.037299e-01, 2.219027e-03, 1.383707e-03, -7.233722e-02)
+focal = 2268.36
+pp = (1048.64,519.27)
+'''
+
+cam = Camera(calibMat, distCoeffs, focal, pp, size)
 
 def dist(point1, point2):
     return math.sqrt((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2)
-
-def getNearbyPoints(unassigned, point, eps):
-    if point in unassigned:
-        unassigned.remove(point)
-    nearby = [point]
-    while (len(unassigned) > 0):
-        nextNeighbours = []
-        for neighbour in nearby:
-            for pretender in unassigned:
-                if 0.001 < dist(neighbour, pretender) < eps:
-                    nextNeighbours.append(pretender)
-                    unassigned.remove(pretender)
-        nearby += nextNeighbours
-        if len(nextNeighbours) == 0:
-            return nearby
-        #map(lambda p: unassigned.remove(p), nearby)
-
-    return nearby
 
 def unionCloseRects(rects1, rects2):
     union = []
@@ -63,12 +112,16 @@ def unionCloseRects1(clusters1, clusters2):
     rects1 = []
     rects2 = []
     for cluster in clusters1:
+        if (len(cluster) < cnst.minPinClust):
+            continue
         maxX = max(cluster, key=lambda p: p[0])[0]
         maxY = max(cluster, key=lambda p: p[1])[1]
         minX = min(cluster, key=lambda p: p[0])[0]
         minY = min(cluster, key=lambda p: p[1])[1]
         rects1.append([(minX, maxY), (maxX, minY)])
     for cluster in clusters2:
+        if (len(cluster) < cnst.minPinClust):
+            continue
         maxX = max(cluster, key=lambda p: p[0])[0]
         maxY = max(cluster, key=lambda p: p[1])[1]
         minX = min(cluster, key=lambda p: p[0])[0]
@@ -77,17 +130,59 @@ def unionCloseRects1(clusters1, clusters2):
     rects = unionCloseRects(rects1, rects2)
     return rects
 
+def moduleVect(vector):
+    return math.sqrt(vector[0] ** 2 + vector[1] ** 2)
 
-def clusterPoints(points, eps):  # eps = num of pixels to be considered as close enough
-    unassigned = [(point[0], point[1]) for point in points]
+def unitVect(vector):
+    return vector / np.linalg.norm(vector)
+
+def angleVect(v1, v2):
+    v1_u = unitVect(v1)
+    v2_u = unitVect(v2)
+    return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
+
+def clusterVect(clustersold, clustersnew):
     clusters = []
-    while (len(unassigned)):
-        for p in unassigned:
-            myPoint = (p[0], p[1])
-            # eps=52 is a good number
-            near = getNearbyPoints(unassigned, myPoint, eps)
-            clusters.append(near)
+    for clust1, clust2 in zip(clustersold, clustersnew):
+        clust = []
+        for p1, p2 in zip(clust1, clust2):
+            v = [p1[0]-p2[0], p1[1]-p2[1]]
+            clust.append(v)
+        clusters.append(clust)
     return clusters
+
+def removeOutliers(clustervects):
+    outclusters = []
+    for cluster in clustervects:
+        cnt = 0
+        for v1 in cluster:
+            for v2 in cluster:
+                alpha = angleVect(np.array(v1), np.array(v2))
+                if(alpha < cnst.critAlpha):
+                    cnt += 1
+        if(cnt <= len(cluster)**2//4): # bad cluster
+            outclusters.append([0])
+            continue
+        else:
+            outclusters.append(cluster)
+    return outclusters
+
+def recoverClusters(newclust, vectclust): #recover clusters without outliers
+    newclusters = []
+    oldclusters = []
+    for clust1, clust2 in zip(newclust, vectclust):
+        if(len(clust2) == 1): #it's a point, bro! old clusters should not be recovered
+            continue
+        else:
+            oldclust = []
+            for p1, p2 in zip(clust1, clust2):
+                newp = [p2[0]+p1[0], p2[1]+p1[1]]
+                oldclust.append(newp)
+            oldclusters.append(oldclust)
+            newclusters.append(clust1)
+    return newclusters, oldclusters
+
+
 
 def rectangles(clusters):
     rects = []
@@ -100,137 +195,11 @@ def rectangles(clusters):
         #rects.append(cv2.rectangle(frame1, (minX, maxY), (maxX, minY), color, 3))
     return rects
 
-def trackRect(rect, frame):
-    # take first frame of the video
-    frame = cv2.imread(frame)
-    # setup initial location of window
-    minX, maxY, maxX, minY = rect[0][0], rect[0][1], rect[1][0], rect[1][1]
-    c = minX
-    r = minY
-    w = maxX - minX
-    h = maxY - minY
-    track_window = (c, r, w, h)
-    if (c < 0 or r < 0 or w < 0 or h < 0):
-        return [(1, 2), (3, 4)]
-    if (minX == maxX or minY == maxY):
-        return [(1, 2), (3, 4)]
-    # set up the ROI for tracking
-    roi = frame[r:r + h, c:c + w]
-    hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    mask = cv2.inRange(hsv_roi, np.array((0., 60., 32.)), np.array((180., 255., 255.)))
-    roi_hist = cv2.calcHist([hsv_roi], [0], mask, [180], [0, 180])
-    cv2.normalize(roi_hist, roi_hist, 0, 255, cv2.NORM_MINMAX)
-    term_crit = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 1)
-
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    dst = cv2.calcBackProject([hsv], [0], roi_hist, [0, 180], 1)
-    # apply meanshift to get the new location
-    ret, track_window = cv2.meanShift(dst, track_window, term_crit)
-    x, y, w, h = track_window
-    #(minX, maxY), (maxX, minY)
-    img2 = cv2.rectangle(frame, (x, y+h), (x + w, y), 255, 2)
-    #cv2.imwrite('img2.png', img2)
-    rect = [(x, y+h), (x + w, y)]
-    return rect
-
-def trackRects(rectas, img):
-    rects = []
-    for rect in rectas:
-        rect1 = trackRect(rect,img)
-        rects.append(rect1)
-    return rects
-
-
-#x = xa1 + (xa2 - xa1) * ta = xb1 + (xb2 - xb1) * tb
-#and
-#y = ya1 + (ya2 - ya1) * ta = yb1 + (yb2 - yb1) * tb
-
-
 def line_intersection(line1, line2):
     return 0
 
 def dist3D(p1, p2):
     return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2 + (p1[2] - p2[2]) ** 2)
-
-def pointCloud(cam, rotMat, trVect, pts1, pts2):
-    EPS = 0.001
-    points3Dx = []
-    points3Dy = []
-    points3Dz = []
-    z = cam.focal
-    w,h = cam.imgsize
-    print(trVect)
-    for i in range(0, len(pts1)):
-        p1 = pts1[i] # pts1 = points on frame1
-        p1 = np.array([p1[0] + w/2, p1[1] + h/2, z]) # p1 in camera1 basis
-        x1, y1, z1 = p1[0], p1[1], p1[2]
-
-        p2 = pts2[i] # pts2 = points on frame 2
-        p2 = np.array([p2[0] + w/2, p2[1] + h/2, z]) # p2 in camera2 basis
-        p2 = np.dot(rotMat, p2) # p2 in camera1 basis
-
-        x2, y2, z2 = p2[0], p2[1], p2[2]
-
-        tx, ty, tz = trVect[0], trVect[1], trVect[2] # translation vector
-
-        S1 = (ty * x1 - tx * y1) / (x2 * y1 - y2 * x1)
-        S2 = (tz * x1 - tx * z1) / (x2 * z1 - z2 * x1)
-        T1 = (tx + S1 * x2) / x1
-        T2 = (tx + S2 * x2) / x1
-
-        if (abs((T1 * x1) - (tx + S1 * x2)) < EPS):
-            print("t1x")
-            x0 = T1 * x1
-        if (abs((T1 * y1) - (ty + S1 * y2)) < EPS):
-            print("t1y")
-            y0 = T1 * x1
-        if (abs((T1 * z1) - (tz + S1 * z2)) < EPS):
-            print("t1z")
-            z0 = T1 * x1
-        #if (abs((T2 * x1) - (tx + S2 * x2)) < EPS):
-            #print("t2x")
-            #x0 = T2 * x1
-        #if (abs((T2 * y1) - (ty + S2 * y2)) < EPS):
-            #print("t2y")
-            #y0 = T2 * x1
-        if (abs((T2 * z1) - (tz + S2 * z2)) < EPS):
-            print("t2z")
-            z0 = T2 * x1
-        '''
-        if (abs((T1 * x1) - (tx + S1 * x2)) < EPS and
-                    abs((T1 * y1) - (ty + S1 * y2)) < EPS and
-                    abs((T1 * z1) - (tz + S1 * z2)) < EPS):
-            x0 = T1 * x1
-            y0 = T1 * y1
-            z0 = T1 * z1
-        elif (abs((T2 * x1) - (tx + S2 * x2)) < EPS and
-                      abs((T2 * y1) - (ty + S2 * y2)) < EPS and
-                      abs((T2 * z1) - (tz + S2 * z2)) < EPS):
-            x0 = T2 * x1
-            y0 = T2 * y1
-            z0 = T2 * z1
-        else:
-            print("не пересеклись :(")
-            return 0
-        '''
-        print([x0, y0, z0])
-        points3Dx.append(x0)
-        points3Dy.append(y0)
-        points3Dz.append(z0)
-    import matplotlib.pyplot as plt
-    from mpl_toolkits.mplot3d import Axes3D
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(points3Dx, points3Dy, points3Dz, c='r', marker='*')
-    plt.savefig('fig.png')
-    xmin = min(points3Dx)
-    ymin = min(points3Dy)
-    xmax = max(points3Dx)
-    ymax = max(points3Dy)
-    plt.xlim(xmin, xmax)
-    plt.ylim(ymin, ymax)
-    plt.show()
-    return 1
 
 import glob
 
@@ -244,15 +213,16 @@ for i in range(1, len(images)):
     img1 = images[i]
     img2 = images[i-1]
     if (first_two_frames):
-        rects = trackRects(rects, img1)
+        rects = tracker.trackRects(rects, img1)
         drawer = Drawer(img1, img2, [255, 0, 0])
         img = drawer.drawRects(rects, img2)
         plt.imshow(img, extent=[0, 300, 0, 1], aspect=200)
 
         plt.draw()
         plt.pause(0.01)
+        first_two_frames = False
         continue
-    selector = PointSelector(img1, img2)
+    selector = PointSelector(img1, img2, size)
     drawer = Drawer(img1, img2, [0, 0, 255])
 
     good_new, good_old, road_new, road_old = selector.select()
@@ -264,19 +234,7 @@ for i in range(1, len(images)):
     road_old = np.int32(road_old)
 
     drawer.drawFlow(pts1, pts2, 'goodEnough.jpg', img1)
-    # set parameters for camera (set of data)
 
-    calibMat = np.array([
-        [9.895267e+02, 0.000000e+00, 7.020000e+02],
-        [0.000000e+00, 9.878386e+02, 2.455590e+02],
-        [0.000000e+00, 0.000000e+00, 1.000000e+00]
-    ])
-    size = (1392, 512)
-    distCoeffs = (-3.728755e-01, 2.037299e-01, 2.219027e-03, 1.383707e-03, -7.233722e-02)
-    focal = 9.895267e+02
-    pp = (7.020000e+02, 2.455590e+02)
-
-    cam = Camera(calibMat, distCoeffs, focal, pp, size)
     outlierer = Outlierer()
 
 
@@ -286,8 +244,8 @@ for i in range(1, len(images)):
                                    prob=0.999, threshold=1.0)
     # optical flow outliers
     out1, out2 = outlierer.optFLowMagnOutliers(pts1, pts2)
-    clusteredout1 = clusterPoints(out1, cnst.clusterConstant)
-    clusteredout2 = clusterPoints(out2, cnst.clusterConstant)
+    clusteredout1 = clst.clusterPoints(out1, cnst.clusterConstant)
+    clusteredout2 = clst.clusterPoints(out2, cnst.clusterConstant)
 
     frame1 = drawer.drawClusters(clusteredout1, img1, [0,0,255])
     frame2 = drawer.drawClusters(clusteredout2, img2, [0,0,255])
@@ -303,8 +261,8 @@ for i in range(1, len(images)):
 
     # cluster and draw them
     # good outliers
-    clusteredout11 = clusterPoints(out1, cnst.clusterConstant)
-    clusteredout22 = clusterPoints(out2, cnst.clusterConstant)
+    clusteredout11 = clst.clusterPoints(out1, cnst.clusterConstant)
+    clusteredout22 = clst.clusterPoints(out2, cnst.clusterConstant)
 
     frame1 = drawer.drawClusters(clusteredout11, img1, [0,0,255])
     frame2 = drawer.drawClusters(clusteredout22, img2, [0,0,255])
@@ -328,10 +286,6 @@ for i in range(1, len(images)):
     rotTrans = np.column_stack((R, t))
     projMat = np.dot(calibMat, rotTrans)
 
-    points3D = pointCloud(cam, R, t, out1, out2)
-
-
-
     # to find fundamental matrix and draw epilines
     F, mask = cv2.findFundamentalMat(pts1, pts2, cv2.FM_8POINT)
 
@@ -353,8 +307,8 @@ for i in range(1, len(images)):
     outliers2 = outlierer.selectOutliers(pts2, lines1)
 
     #ЗАХАРДКОДИМ?
-    clusteredout0 = clusterPoints(outliers1, cnst.clusterConstant)
-    clusteredout = clusterPoints(outliers2, cnst.clusterConstant)
+    clusteredout0 = clst.clusterPoints(outliers1, cnst.clusterConstant)
+    clusteredout = clst.clusterPoints(outliers2, cnst.clusterConstant)
 
     frame1 = drawer.drawClusters(clusteredout0, img1, [0,0,255])
     frame2 = drawer.drawClusters(clusteredout, img2, [0,0,255])
@@ -362,18 +316,24 @@ for i in range(1, len(images)):
     #cv2.imwrite('sup.jpg', frame1)
     #cv2.imwrite('sup2.jpg', frame2)
 
-    #clusteredout (for sup), clusteredout11 (for optflow) and clusteredout1 (for clusters.jpg)
-
-    #rects = unionCloseRects1(clusteredout11, clusteredout1)
-    #rects1 = unionCloseRects1(clusteredout0, clusteredout11)
-    #rects = unionCloseRects(rects, rects1)
-    #img = drawer.drawRects(rects, img1)
-    #cv2.imwrite(os.path.join('detected',img1),img)
-    #plt.imshow(img)
-    #plt.show()
-
+    #clusteredout (for sup), clusteredout11 (for optflowmagn) and clusteredout1 (for clusters.jpg)
+    clv = clusterVect(clustersnew=clusteredout, clustersold=clusteredout0)
+    clv = removeOutliers(clv)
+    newclv, oldclv = recoverClusters(clusteredout, clv)
+    clv1 = clusterVect(clustersold=clusteredout11, clustersnew=clusteredout22)
+    clv1 = removeOutliers(clv1)
+    newclv1, oldclv1 = recoverClusters(clusteredout22, clv1)
+    clv2 = clusterVect(clustersnew=clusteredout2, clustersold=clusteredout1)
+    clv2 = removeOutliers(clv2)
+    newclv2, oldclv2 = recoverClusters(clusteredout2, clv2)
     #out = outlierer.
-    rects = unionCloseRects1(clusteredout22, clusteredout22)
+    #rects = unionCloseRects1(clusteredout22, clusteredout22)
+    #rects1 = unionCloseRects1(clusteredout, clusteredout11)
+    #rects = unionCloseRects(rects, rects1)
+    #rects = unionCloseRects1(clv, clv1)
+    rects = unionCloseRects1(newclv1,newclv1)
+    rects1 = unionCloseRects1(newclv2, newclv2)
+    rects = unionCloseRects(rects, rects1)
     #rects1 = unionCloseRects1(clusteredout, clusteredout2)
     #rects = unionCloseRects(rects, rects1)
     img = drawer.drawRects(rects, img2)
@@ -391,8 +351,22 @@ for i in range(1, len(images)):
 
     #plt.imshow(img, extent=[0,600,0,2], aspect=200)
 
+    reconst = Reconstructor(cam, R, t)
+
+    road_plane = reconst.pointCloud(road_old, road_new)
+    #print(selector.bot_img1)
+    #cv2.imwrite("bottom.jpg", selector.bot_img2)
+    #print(road_old)
+    road_pts1, road_pts2 = reconst.pixelOnRoad(selector.img1, selector.img2, road_plane)
+    road_pts1 = np.int32(road_pts1)
+    road_pts2 = np.int32(road_pts2)
+    #print(road_pts1)
+    drawer.drawPoints(road_pts1, 'out.jpg', selector.img1, True)
+    print("lel")
+    #selector.selectRoad()
     #plt.draw()
-    #plt.pause(0.01)
+    #plt.pause(0.001)
+    #break
 
     #first_two_frames = True
     #plt.show()

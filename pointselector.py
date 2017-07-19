@@ -2,26 +2,38 @@ import cv2
 import numpy as np
 import random
 from drawer import Drawer
+import math
 from constants import MagicConstants
 
 cnst = MagicConstants()
 
 class PointSelector:
-    def __init__(self, img1, img2):
-        self.img1 = cv2.imread(img1)
-        self.img1 = cv2.blur(self.img1, cnst.gaussWin)
+    def __init__(self, img1, img2, size, read=False):
+        if (not read):
+            self.img1 = cv2.imread(img1)
+            self.img1 = cv2.blur(self.img1, cnst.gaussWin)
+        else:
+            self.img1 = img1
+        #self.img1 = cv2.blur(self.img1, cnst.gaussWin)
+        #self.img1 = cv2.threshold(self.img1,127,255,cv2.THRESH_BINARY)
         #self.img1 = cv2.pyrMeanShiftFiltering(self.img1, cnst.meanShiftN, cnst.meanShiftN)
-        self.img2 = cv2.imread(img2)
-        self.img2 = cv2.blur(self.img2, cnst.gaussWin)
+        if (not read):
+            self.img2 = cv2.imread(img2)
+            self.img2 = cv2.blur(self.img2, cnst.gaussWin)
+        else:
+            self.img2 = img2
+        #self.img2 = cv2.blur(self.img2, cnst.gaussWin)
+        #self.img2 = cv2.threshold(self.img2,127,255,cv2.THRESH_BINARY)
         #self.img2 = cv2.pyrMeanShiftFiltering(self.img2, cnst.meanShiftN, cnst.meanShiftN)
         self.magicConstant = cnst.pointToSelect
+        self.imgSize = size
 
     def cornerHarris(self):
-        img = self.img1
+        img = self.img2
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         gray = np.float32(gray)
         # 0.04
-        dst = cv2.cornerHarris(gray, 2, 3, 0.04)
+        dst = cv2.cornerHarris(gray, 4, 3, 0.09)
         dst = cv2.dilate(dst, None)
         ret, dst = cv2.threshold(dst, 0.01 * dst.max(), 255, 0)
         dst = np.uint8(dst)
@@ -33,8 +45,14 @@ class PointSelector:
 
         res = np.hstack((centroids, corners))
         res = np.int0(res)
-        img[res[:, 1], res[:, 0]] = [0, 0, 255]
-        img[res[:, 3], res[:, 2]] = [0, 255, 0]
+        try:
+            img[res[:, 1], res[:, 0]] = [0, 0, 255]
+            img[res[:, 3], res[:, 2]] = [0, 255, 0]
+        except Exception:
+            print("kek")
+            corners = corners[:, np.newaxis]
+            return corners
+
         # cv2.imwrite('harris.png',img)
         corners = corners[:, np.newaxis]
         return corners
@@ -91,19 +109,37 @@ class PointSelector:
         # cv2.imwrite('opticalFlow.jpg', img)
         return good_new, good_old
 
+    def moduleVect(self, vector):
+        return math.sqrt(vector[0] ** 2 + vector[1] ** 2)
+
+    def largeModule(self, vector):
+        return (self.moduleVect(vector) > cnst.largeModuleCnst * self.imgSize[0] or self.moduleVect(vector) > cnst.largeModuleCnst * self.imgSize[1])
+
     def select(self):
         # imgs, good_old_points in imgs, good_new_points in imgs
         # returns good_enough_old_p and new
         good_new, good_old = self.lucasKanade()
-        #drawer
-        goodnum = self.magicConstant  # ЗАХАРДКОДИМ? 42
+        good_new1 = [[point[0], point[1]] for point in good_new]
+        good_old1 = [[point[0], point[1]] for point in good_old]
+        # remove too large vectors
+        #for new, old in zip(good_new1, good_old1):
+        #    vx = old[0] - new[0]
+        #    vy = old[1] - new[1]
+        #    v = [vx, vy]
+        #    if (self.largeModule(v)):
+        #        good_new1.remove(new)
+        #        good_old1.remove(old)
+        goodnum = self.magicConstant
         img1 = self.img1
         img2 = self.img2
         size = img2.shape
         newh = size[0] // 3
-        top_img2 = img2[1: newh, 1: size[1]]
-        mid_img2 = img2[newh: newh * 2, 1: size[1]]
-        bot_img2 = img2[newh * 2: size[0], 1: size[1]]
+        self.top_img1 = self.img1[1: newh, 1: size[1]]
+        self.mid_img1 = self.img1[newh: newh * 2, 1: size[1]]
+        self.bot_img1 = self.img1[newh * 2: size[0], 1: size[1]]
+        self.top_img2 = self.img2[1: newh, 1: size[1]]
+        self.mid_img2 = self.img2[newh: newh * 2, 1: size[1]]
+        self.bot_img2 = self.img2[newh * 2: size[0], 1: size[1]]
         pts = {}
         t0 = []
         m0 = []
@@ -115,8 +151,8 @@ class PointSelector:
         allcnt = 0
         mask = np.zeros_like(img1)
         for i, (new, old) in enumerate(zip(good_new, good_old)):
-            a, b = new.ravel()  # good new x, y
-            c, d = old.ravel()  # good old x, y
+            a, b = new[0], new[1]  # good new x, y
+            c, d = old[0], old[1]  # good old x, y
             allcnt += 1
             if b < newh and d < newh:
                 topimgcnt += 1
@@ -132,14 +168,20 @@ class PointSelector:
                 # pts[(new, old)] = "road"
             else:
                 chimgcnt += 1
-        goodnum = min(goodnum, min(len(b0), min(len(m0), len(t0))))
+        goodnum1 = min(goodnum, min(len(b0), min(len(m0), len(t0))))
+        if (abs(goodnum1 - goodnum) > cnst.subtractGNum):
+            road = b0
+            road_new, road_old = zip(*road)
+            return good_new, good_old, road_new, road_old
+        goodnum = goodnum1
         if (goodnum == 0):
             t0 = t0 + m0 + b0
             good_new, good_old = zip(*t0)
             return good_new, good_old
         # goodnum2 = min(60, len(m0))
         road = random.sample(b0, goodnum)
-        t0 = random.sample(t0, goodnum) + random.sample(m0, goodnum) + road
+        t0 = random.sample(m0, goodnum) + road
+        '''random.sample(t0, goodnum) + '''
         for i, (new, old) in enumerate(t0):
             a, b = new.ravel()
             c, d = old.ravel()
