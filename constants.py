@@ -1,17 +1,15 @@
-
 class MagicConstants:
-    def __init__(self):
-        self.clusterConstant =  70
-        self.closeToEpipolar = 2
-        self.optFlowMagn = 7
-        s = 4
-        self.gaussWin = (s, s)
-        self.meanShiftN = 16
-        self.pointToSelect = 58
-        self.subtractGNum = 20
-        self.reconstructEPS = 0.00001
-        self.largeModuleCnst = 0.3
-        self.roadPlanePts = 6
-        self.critAlpha = 0.5
-        self.minPinClust = 5
-        self.distToRoad = 3
+    clusterConstant = 70
+    closeToEpipolar = 2
+    optFlowMagn = 7
+    s = 4
+    gaussWin = (s, s)
+    meanShiftN = 16
+    pointToSelect = 42
+    subtractGNum = 20
+    reconstructEPS = 0.00001
+    largeModuleCnst = 0.3
+    roadPlanePts = 6
+    critAlpha = 1
+    minPinClust = 5
+    distToRoad = 0.3

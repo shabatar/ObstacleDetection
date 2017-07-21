@@ -4,7 +4,6 @@ import random
 import math
 from constants import MagicConstants
 
-cnst = MagicConstants()
 class Outlierer:
     #def __init__(self):
     #    self.outEss = outEss
@@ -21,7 +20,7 @@ class Outlierer:
     def selectOutliers(self, points, epilines):
         outliers = []
         for (p, line) in zip(points, epilines):
-            if (self.distToLine(line, p) > cnst.closeToEpipolar):  # ЗАХАРДКОДИМ?
+            if (self.distToLine(line, p) > MagicConstants.closeToEpipolar):  # ЗАХАРДКОДИМ?
                 outliers.append(p)
         return outliers
 
@@ -31,7 +30,7 @@ class Outlierer:
         pts1 = [(point[0], point[1]) for point in pts1]
         pts2 = [(point[0], point[1]) for point in pts2]
         for (p1, p2) in zip(pts1, pts2):
-            if (self.dist(p1, p2) < cnst.optFlowMagn):  # ЗАХАРДКОДИМ?
+            if (self.dist(p1, p2) < MagicConstants.optFlowMagn):  # ЗАХАРДКОДИМ?
                 out1.append(p1)
                 out2.append(p2)
         return out1, out2

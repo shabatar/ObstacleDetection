@@ -17,7 +17,7 @@ class Tracker:
         if (minX == maxX or minY == maxY):
             return [(1, 2), (3, 4)]
         # set up the ROI for tracking
-        roi = frame[r:r + h, c:c + w]
+        roi = frame[int(r):int(r + h), int(c):int(c + w)]
         hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
         mask = cv2.inRange(hsv_roi, np.array((0., 60., 32.)), np.array((180., 255., 255.)))
         roi_hist = cv2.calcHist([hsv_roi], [0], mask, [180], [0, 180])

@@ -24,6 +24,9 @@ class VisOdometry:
         self.E, self.essentialmask = cv2.findEssentialMat(ptsold, ptsnew, focal=cam.focal, pp=cam.pp, method=cv2.RANSAC,
                                                  prob=0.999, threshold=1.0)
         #out2 = pts2[mask.ravel() == 0]
+        if (self.E is None):
+            print("tresh")
+            return
         if (self.essentialmask is not None):
             # detect outliers and inliers, pts = inliers
             self.outold = ptsold[self.essentialmask.ravel() == 0]
@@ -41,3 +44,16 @@ class VisOdometry:
             # drawing its lines on right image
             self.epilinesnew = cv2.computeCorrespondEpilines(ptsold.reshape(-1, 1, 2), 2, self.F)
             self.epilinesnew = self.epilinesnew.reshape(-1, 3)
+        else:
+            self.F, self.fundamentalmask = cv2.findFundamentalMat(ptsold, ptsnew, cv2.LMEDS)
+            if (self.F is not None):
+                # Find epilines corresponding to points in right image (second image) and
+                # drawing its lines on left image
+                self.epilinesold = cv2.computeCorrespondEpilines(ptsnew.reshape(-1, 1, 2), 2, self.F)
+                self.epilinesold = self.epilinesold.reshape(-1, 3)
+                # Find epilines corresponding to points in left image (first image) and
+                # drawing its lines on right image
+                self.epilinesnew = cv2.computeCorrespondEpilines(ptsold.reshape(-1, 1, 2), 2, self.F)
+                self.epilinesnew = self.epilinesnew.reshape(-1, 3)
+            else:
+                print('dich')

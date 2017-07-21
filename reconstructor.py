@@ -5,7 +5,6 @@ from drawer import *
 import random
 import math
 
-cnst = MagicConstants()
 class Reconstructor:
     def __init__(self, cam, rotMat, trVect):
         self.cam = cam
@@ -26,16 +25,29 @@ class Reconstructor:
         return A,B,C,D
 
     def distPlanePt(self, plane, pt):
+        plane = np.array(plane)
+        pt = np.array(pt)
+        pt = pt.tolist()
+        plane = plane.tolist()
+        #if (type(pt[0]) is list):
+        #    pt = [i[0] for i in plane]
         ptx, pty, ptz = pt[0], pt[1], pt[2]
         A, B, C, D = plane[0], plane[1], plane[2], plane[3]
-        return abs(A*ptx + B*pty + C*ptz + D) / math.sqrt(A**2 + B**2 + C**2)
+        if (A == 0.0 and B == 0.0 and C == 0.0):
+            #print("kek net ploskosti")
+            return 10000
+        up = abs(A*ptx + B*pty + C*ptz + D)
+        down = math.sqrt(A**2 + B**2 + C**2)
+        dst = up / down
+        return dst
 
     def planeFitRansac(self, points, equation=True):
         best3pts = []
         bestPlane = 0, 0, 0, 0
         just3pts = random.sample(points, 3)
         plane = self.planeByPoints(just3pts[0], just3pts[1], just3pts[2])
-        sumBest = sum(self.distPlanePt(plane, pt)**2 for pt in points)
+        sumBest = sum(self.distPlanePt(plane, pt) for pt in points)
+        bestPlane = plane
         for i in range(0, 50):
             just3pts = random.sample(points, 3)
             plane = self.planeByPoints(just3pts[0], just3pts[1], just3pts[2])
@@ -52,7 +64,6 @@ class Reconstructor:
 
     def PCA(self, data, correlation=False, sort=True):
         mean = np.mean(data, axis=0)
-
         data_adjust = data - mean
         # matrix = np.corrcoef(data_adjust.T)
         #: the data is transposed due to np.cov/corrcoef syntax
@@ -72,10 +83,28 @@ class Reconstructor:
 
         return eigenvalues, eigenvectors
 
+    def outlierRemove(self, kdtree, k=20, z_max=80, y_max=90, x_max=80):
+        distances, i = kdtree.query(kdtree.data, k=k)
+        from scipy.stats import zscore
+        z_distances = zscore(np.mean(distances, axis=1))
+        zfilter = abs(z_distances) < z_max
+        return zfilter
+
     def bestFitPlane(self, points, equation=True):
+        from scipy.spatial import KDTree
+        points = [np.array(point) for point in points]
+        points = np.array(points)
+        points = KDTree(points, leafsize=points.shape[0]+1)
+        filter = self.outlierRemove(points)
+        points1 = []
+        for i in range(0, points.data.shape[0]):
+            point = points.data[i]
+            if (filter[i] == True):
+                points1.append([point[0], point[1], point[2]])
+        points = points1
         w, v = self.PCA(points)
         import random
-        points = random.sample(points, cnst.roadPlanePts)
+        points = random.sample(points, MagicConstants.roadPlanePts)
         #: the normal of the plane is the last eigenvector
         normal = v[:, 2]
 
@@ -92,6 +121,49 @@ class Reconstructor:
         else:
             return point, normal
 
+    def reconstructPoint1(self, point1, point2):
+        z = 1
+        w, h = (200,200)
+        rotMat = np.array([
+            [1.000000e+00, 0.000000e+00, 0.000000e+00],
+            [0.000000e+00, math.sqrt(2) / 2, - math.sqrt(2) / 2],
+            [0.000000e+00, math.sqrt(2) / 2, math.sqrt(2) / 2]
+        ])
+        trVect = np.array([
+            [1.000000e+00],
+            [1.000000e+00],
+            [1.000000e+00]
+        ])
+        p1 = point1
+        p1 = np.array([p1[0] + w / 2, p1[1] + h / 2, z])  # p1 in camera1 basis
+        x1, y1, z1 = p1[0], p1[1], p1[2]
+
+        p2 = point2
+        p2 = np.array([p2[0] + w / 2, p2[1] + h / 2, z])  # p2 in camera2 basis
+        p2 = np.dot(self.rotMat, p2)  # p2 in camera1 basis
+        x2, y2, z2 = p2[0], p2[1], p2[2]
+
+        tx, ty, tz = self.trVect[0], self.trVect[1], self.trVect[2]  # translation vector
+
+        S1 = (ty * x1 - tx * y1) / (x2 * y1 - y2 * x1)
+        S2 = (tz * x1 - tx * z1) / (x2 * z1 - z2 * x1)
+        T1 = (tx + S1 * x2) / x1
+        T2 = (tx + S2 * x2) / x1
+        x0, y0, z0 = [0.0], [0.0], [0.0]
+        if (np.all(abs((T1 * x1) - (tx + S1 * x2))) < MagicConstants.reconstructEPS):
+            x0 = T1 * x1
+        if (np.all(abs((T1 * y1) - (ty + S1 * y2))) < MagicConstants.reconstructEPS):
+            y0 = T1 * x1
+        if (np.all(abs((T1 * z1) - (tz + S1 * z2))) < MagicConstants.reconstructEPS):
+            z0 = T1 * x1
+        if (np.all(abs((T2 * x1) - (tx + S2 * x2))) < MagicConstants.reconstructEPS):
+            x0 = T2 * x1
+        if (np.all(abs((T2 * y1) - (ty + S2 * y2))) < MagicConstants.reconstructEPS):
+            y0 = T2 * x1
+        if (np.all(abs((T2 * z1) - (tz + S2 * z2))) < MagicConstants.reconstructEPS):
+            z0 = T2 * x1
+        return [x0, y0, z0]
+
     def reconstructPoint(self, point1, point2):
         z = self.cam.focal
         w, h = self.cam.imgsize
@@ -102,7 +174,6 @@ class Reconstructor:
         p2 = point2
         p2 = np.array([p2[0] + w / 2, p2[1] + h / 2, z])  # p2 in camera2 basis
         p2 = np.dot(self.rotMat, p2)  # p2 in camera1 basis
-
         x2, y2, z2 = p2[0], p2[1], p2[2]
 
         tx, ty, tz = self.trVect[0], self.trVect[1], self.trVect[2]  # translation vector
@@ -112,19 +183,19 @@ class Reconstructor:
         T1 = (tx + S1 * x2) / x1
         T2 = (tx + S2 * x2) / x1
         x0, y0, z0 = [0.0], [0.0], [0.0]
-        if (np.all(abs((T1 * x1) - (tx + S1 * x2))) < cnst.reconstructEPS):
+        if (np.all(abs((T1 * x1) - (tx + S1 * x2))) < MagicConstants.reconstructEPS):
             x0 = T1 * x1
-        if (np.all(abs((T1 * y1) - (ty + S1 * y2))) < cnst.reconstructEPS):
+        if (np.all(abs((T1 * y1) - (ty + S1 * y2))) < MagicConstants.reconstructEPS):
             y0 = T1 * x1
-        if (np.all(abs((T1 * z1) - (tz + S1 * z2))) < cnst.reconstructEPS):
+        if (np.all(abs((T1 * z1) - (tz + S1 * z2))) < MagicConstants.reconstructEPS):
             z0 = T1 * x1
-        if (np.all(abs((T2 * x1) - (tx + S2 * x2))) < cnst.reconstructEPS):
+        if (np.all(abs((T2 * x1) - (tx + S2 * x2))) < MagicConstants.reconstructEPS):
             x0 = T2 * x1
-        if (np.all(abs((T2 * y1) - (ty + S2 * y2))) < cnst.reconstructEPS):
+        if (np.all(abs((T2 * y1) - (ty + S2 * y2))) < MagicConstants.reconstructEPS):
             y0 = T2 * x1
-        if (np.all(abs((T2 * z1) - (tz + S2 * z2))) < cnst.reconstructEPS):
+        if (np.all(abs((T2 * z1) - (tz + S2 * z2))) < MagicConstants.reconstructEPS):
             z0 = T2 * x1
-        return [x0, y0, z0]
+        return [x0[0], y0[0], z0[0]]
 
     def pointCloud(self, pts1, pts2):
         EPS = 0.001
@@ -135,43 +206,14 @@ class Reconstructor:
         z = self.cam.focal
         w, h = self.cam.imgsize
         for i in range(0, len(pts1)):
-            p1 = pts1[i]  # pts1 = points on frame1
-            p1 = np.array([p1[0] + w / 2, p1[1] + h / 2, z])  # p1 in camera1 basis
-            x1, y1, z1 = p1[0], p1[1], p1[2]
-
-            p2 = pts2[i]  # pts2 = points on frame 2
-            p2 = np.array([p2[0] + w / 2, p2[1] + h / 2, z])  # p2 in camera2 basis
-            p2 = np.dot(self.rotMat, p2)  # p2 in camera1 basis
-
-            x2, y2, z2 = p2[0], p2[1], p2[2]
-
-            tx, ty, tz = self.trVect[0], self.trVect[1], self.trVect[2]  # translation vector
-
-            S1 = (ty * x1 - tx * y1) / (x2 * y1 - y2 * x1)
-            S2 = (tz * x1 - tx * z1) / (x2 * z1 - z2 * x1)
-            T1 = (tx + S1 * x2) / x1
-            T2 = (tx + S2 * x2) / x1
-            x0, y0, z0 = [0], [0], [0]
-            #print(abs((T1 * x1) - (tx + S1 * x2))[0])
-            if (np.all(abs((T1 * x1) - (tx + S1 * x2))) < EPS):
-                x0 = T1 * x1
-            if (np.all(abs((T1 * y1) - (ty + S1 * y2))) < EPS):
-                y0 = T1 * x1
-            if (np.all(abs((T1 * z1) - (tz + S1 * z2))) < EPS):
-                z0 = T1 * x1
-            if (abs((T2 * x1) - (tx + S2 * x2)) < EPS):
-                x0 = T2 * x1
-            if (abs((T2 * y1) - (ty + S2 * y2)) < EPS):
-                y0 = T2 * x1
-            if (np.all(abs((T2 * z1) - (tz + S2 * z2))) < EPS):
-                z0 = T2 * x1
-            points3Dx.append(x0)
-            points3Dy.append(y0)
-            points3Dz.append(z0)
-            pts3Ds.append([x0[0], y0[0], z0[0]])
+            point3D = self.reconstructPoint(pts1[i], pts2[i])
+            points3Dx.append(point3D[0])
+            points3Dy.append(point3D[1])
+            points3Dz.append(point3D[2])
+            pts3Ds.append([point3D[0], point3D[1], point3D[2]])
         # pts3Ds = np.array(pts3Ds)
-        point, normal = self.bestFitPlane(pts3Ds, False)
-        equation = self.bestFitPlane(pts3Ds)
+        point, normal = self.planeFitRansac(pts3Ds, False)
+        equation = self.planeFitRansac(pts3Ds)
         # print(plane)
         #plot3Dcloud(points3Dx, points3Dy, points3Dz, point, normal)
         return equation
@@ -191,6 +233,7 @@ class Reconstructor:
         pts2 = []
         for i in range(8, height-8, 8):
             for j in range(8, width-8, 8):
+                # было по другому -- j i !!
                 point2 = [j+0.0, i+0.0]
                 pts2.append(point2)
                 #print(flow[i][j])
@@ -202,25 +245,23 @@ class Reconstructor:
                 #print(point3D)
                 x, y, z = point3D[0], point3D[1], point3D[2]
                 #print("x="+str(x)+"y="+str(y)+"z="+str(z))
-                try:
-                    ev = A * x + B * y + C * z + D
-                except Exception:
-                    continue
-                ev = ev[0]
+                #print(plane)
+                #print(point3D[0])
+                plane = [A, B, C, D]
+                #point3D = point3D.tolist()
+                ev = self.distPlanePt(plane, point3D)
+                    #ev = A * x[0] + B * y[0] + C * z[0] + D
                 #print(ev)
-                if (abs(ev) < cnst.distToRoad):
-                    #print("kek")
-                    #print(abs(ev - 1))
+                if (abs(ev) <= MagicConstants.distToRoad):
                     #print(ev)
-                    #print(ev)
-                    #print(point2)
-                    #print(point1)
                     road_pts1.append(point1)
                     road_pts2.append(point2)
         drw = Drawer(botimg1, botimg2)
         pts1 = np.int32(pts1)
         pts2 = np.int32(pts2)
-        drw.drawFlow(pts1, pts2, 'outout.jpg', botimg2, True)
+        #drw.drawFlow(pts1, pts2, 'outout.jpg', botimg2, True)
+        road_pts1 = np.int32(road_pts1)
+        road_pts2 = np.int32(road_pts2)
         return road_pts1, road_pts2
 
         '''
@@ -276,3 +317,4 @@ class Reconstructor:
                     road_pts2.append(point2)
         return road_pts1, road_pts2
         '''
+

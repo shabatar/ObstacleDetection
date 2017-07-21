@@ -5,7 +5,6 @@ from drawer import Drawer
 import math
 from constants import MagicConstants
 
-cnst = MagicConstants()
 
 class OpticalFlow:
     def __init__(self, img1, img2, read, blur):
@@ -16,8 +15,8 @@ class OpticalFlow:
             self.img1 = img1
             self.img2 = img2
         if (blur):
-            self.img1 = cv2.blur(self.img1, cnst.gaussWin)
-            self.img2 = cv2.blur(self.img2, cnst.gaussWin)
+            self.img1 = cv2.blur(self.img1, MagicConstants.gaussWin)
+            self.img2 = cv2.blur(self.img2, MagicConstants.gaussWin)
         # initial points
         self.pts1 = []
         self.pts2 = []
@@ -113,8 +112,33 @@ class PointSelector:
         return math.sqrt(vector[0] ** 2 + vector[1] ** 2)
 
     def largeModule(self, vector):
-        return (self.moduleVect(vector) > cnst.largeModuleCnst * self.optFlow.img1.shape[0] or
-                self.moduleVect(vector) > cnst.largeModuleCnst * self.optFlow.img1.shape[1])
+        return (self.moduleVect(vector) > MagicConstants.largeModuleCnst * self.optFlow.img1.shape[0] or
+                self.moduleVect(vector) > MagicConstants.largeModuleCnst * self.optFlow.img1.shape[1])
+
+    def getPtsOnRoad(self):
+        height, width, depth = self.optFlow.img2.shape
+        newh = height // 3
+        neww = width // 6
+        img1 = cv2.cvtColor(self.optFlow.img1, cv2.COLOR_BGR2GRAY)
+        img2 = cv2.cvtColor(self.optFlow.img2, cv2.COLOR_BGR2GRAY)
+        self.bot1 = img1[newh * 2: height, 2 * neww: 3 * neww]
+        self.bot2 = img2[newh * 2: height, 2 * neww: 3 * neww]
+        flow = cv2.calcOpticalFlowFarneback(self.bot1, self.bot2, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+        pts1 = []
+        pts2 = []
+        for i in range(5, newh-5, 5):
+            for j in range(5, neww-5, 5):
+                point2 = [j + 0.0, i + 0.0]
+                point1 = [j - flow[i][j][0] + 0.0, i - flow[i][j][1] + 0.0]
+                pts1.append(point1)
+                pts2.append(point2)
+        randIndex = random.sample(range(len(pts1)), MagicConstants.pointToSelect * 2)
+        randIndex.sort()
+        pts1 = [pts1[i] for i in randIndex]
+        pts2 = [pts2[i] for i in randIndex]
+        pts1 = np.int32(pts1)
+        pts2 = np.int32(pts2)
+        return pts1, pts2
 
     def select(self):
         # imgs, good_old_points in imgs, good_new_points in imgs
@@ -130,7 +154,7 @@ class PointSelector:
             if (self.largeModule(v)):
                 good_new1.remove(new)
                 good_old1.remove(old)
-        goodnum = cnst.pointToSelect
+        goodnum = MagicConstants.pointToSelect
         img1 = self.optFlow.img1
         img2 = self.optFlow.img2
         size = img2.shape
@@ -170,16 +194,14 @@ class PointSelector:
             else:
                 chimgcnt += 1
         goodnum1 = min(goodnum, min(len(b0), min(len(m0), len(t0))))
-        if (abs(goodnum1 - goodnum) > cnst.subtractGNum):
-            road = b0
-            road_new, road_old = zip(*road)
-            return good_new, good_old, road_new, road_old
+        #if (abs(goodnum1 - goodnum) > MagicConstants.subtractGNum):
+        #    road = b0
+        #    road_new, road_old = zip(*road)
+        #    return good_new, good_old, road_new, road_old
         goodnum = goodnum1
         if (goodnum == 0):
-            t0 = t0 + m0 + b0
-            good_new, good_old = zip(*t0)
-            return good_new, good_old
-        # goodnum2 = min(60, len(m0))
+            road_new, road_old = self.getPtsOnRoad()
+            return good_new, good_old, road_new, road_old
         road = random.sample(b0, goodnum)
         t0 = random.sample(m0, goodnum) + road
         '''random.sample(t0, goodnum) + '''
@@ -189,13 +211,15 @@ class PointSelector:
             mask = cv2.line(mask, (a, b), (c, d), [255, 0, 0], 2)
             img2 = cv2.circle(img2, (a, b), 2, [255, 0, 0], -1)
         img = cv2.add(img2, mask)
-        print(road)
+        # print(road)
         cv2.imwrite('goodEnough.jpg', img)
         if(t0):
             good_new, good_old = zip(*t0)
         #comment above to do nothing
-        if (road):
+        if (len(road)!=0):
             road_new, road_old = zip(*road)
+        else:
+            road_new, road_old = self.getPtsOnRoad()
         #if (not good_new or not good_old):
         #    return (0,0)
         good_old = np.int32(good_old)

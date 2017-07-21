@@ -1,14 +1,14 @@
 import cv2
 import numpy as np
+from matplotlib import pyplot as plt
 
 def plot3Dcloud(points3Dx, points3Dy, points3Dz, point, normal):
-    import matplotlib.pyplot as plt
-    xmin = min(points3Dx)[0]
-    ymin = min(points3Dy)[0]
-    zmin = min(points3Dz)[0]
-    zmax = max(points3Dz)[0]
-    xmax = max(points3Dx)[0]
-    ymax = max(points3Dy)[0]
+    xmin = min(points3Dx)
+    ymin = min(points3Dy)
+    zmin = min(points3Dz)
+    zmax = max(points3Dz)
+    xmax = max(points3Dx)
+    ymax = max(points3Dy)
     from mpl_toolkits.mplot3d import Axes3D
     # d and we're set
     point = np.array(point)
