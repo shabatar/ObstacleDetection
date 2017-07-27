@@ -19,16 +19,21 @@ from visodometry import Geometry
 
 clst = Cluster()
 tracker = Tracker()
-route = "data/*.png"
+route = "data7/000000008*.png"
 geom = Geometry()
 
+first_two_frames = False
+show = True
+reconstruct = True
+
 # set parameters for camera (set of data)
+
 calibMat = np.array([
     [9.895267e+02, 0.000000e+00, 7.020000e+02],
     [0.000000e+00, 9.878386e+02, 2.455590e+02],
     [0.000000e+00, 0.000000e+00, 1.000000e+00]
 ])
-size = (1392, 512)
+size = (1242, 375)
 distCoeffs = (-3.728755e-01, 2.037299e-01, 2.219027e-03, 1.383707e-03, -7.233722e-02)
 focal = 9.895267e+02
 pp = (7.020000e+02, 2.455590e+02)
@@ -83,7 +88,7 @@ focal = 2268.36
 pp = (1048.64,519.27)
 '''
 # data6 and 7 and 8 calib time 28 09
-'''
+
 calibMat = np.array([
     [9.812178e+02, 0.000000e+00, 6.900000e+02],
     [0.000000e+00, 9.758994e+02, 2.471364e+02],
@@ -93,13 +98,37 @@ size = (1392, 512)
 distCoeffs = (-3.791375e-01, 2.148119e-01, 1.227094e-03, 2.343833e-03, -7.910379e-02)
 focal = 9.812178e+02
 pp = (6.900000e+02, 2.471364e+02)
-'''
+
 cam = Camera(calibMat, distCoeffs, focal, pp, size)
+
+def inRect(point, rect):
+    minX, maxY, maxX, minY = rect[0][0], rect[0][1], rect[1][0], rect[1][1]
+    return (point[0] < maxX and point[0] > minX and point[1] < maxY and point[1] > minY)
+
+def closeRects(rect1, rect2):
+    minX, maxY, maxX, minY = rect1[0][0], rect1[0][1], rect1[1][0], rect1[1][1]
+    r1p1 = [minX, minY]
+    r1p2 = [maxX, minY]
+    r1p3 = [minX, maxY]
+    r1p4 = [maxX, maxY]
+    return inRect(r1p1, rect2) or inRect(r1p2, rect2) or inRect(r1p3, rect2) or inRect(r1p4, rect2)
+
+def largeEnough(rect):
+    minX, maxY, maxX, minY = rect[0][0], rect[0][1], rect[1][0], rect[1][1]
+    S = (maxX - minX) * (maxY - minY)
+    return (S > 50)
+
+def unionRects(rect1, rect2):
+    minX1, maxY1, maxX1, minY1 = rect1[0][0], rect1[0][1], rect1[1][0], rect1[1][1]
+    minX2, maxY2, maxX2, minY2 = rect2[0][0], rect2[0][1], rect2[1][0], rect2[1][1]
+    return [[min(minX1, minX2), max(maxY1, maxY2)], [max(maxX1, maxX2), min(minY1, minY2)]]
 
 def unionCloseRects(rects1, rects2):
     union = []
     for rect1 in rects1:
         for rect2 in rects2:
+            if rect1[0] == rect2[0]:
+                continue
             minX, maxY, maxX, minY = rect1[0][0], rect1[0][1], rect1[1][0], rect1[1][1]
             d1 = math.sqrt((maxX-minX) ** 2 + (maxY-minY) ** 2)
             c1 = (abs(maxX - minX) / 2, abs(maxY - minY) / 2)
@@ -109,15 +138,38 @@ def unionCloseRects(rects1, rects2):
             # (maxX - minX) / 2, (maxY - minY) / 2
             # c1 = (abs(rect1[1][0] - rect1[0][0]) / 2 , abs(rect1[0][1] - rect1[1][1]) / 2)
             # c2 = (abs(rect1[1][0] - rect1[0][0]) / 2 , abs(rect1[0][1] - rect1[1][1]) / 2)
-            d = geom.dist(c1, c2)
+            d = Geometry.dist(c1, c2)
             dmax = max(d1, d2) / 2
             #dmax = dmax / 2
-            if (d < dmax):
-                if (dmax > 50):
-                    union.append(rect1 if dmax == d1 else rect2)
+            #if (d < dmax):
+            #    if (dmax > 50):
+            #        union.append(rect1 if dmax == d1 else rect2)
+            if (closeRects(rect1, rect2)):
+                r = unionRects(rect1, rect2)
+                if (largeEnough(r)):
+                    union.append(r)
     if (len(union) == 0):
         return rects1
     return union
+
+def minDistToCluster(clust1, clust2, reconst):
+    minDist = 1e6
+    for p1, p2 in zip(clust1, clust2):
+        #print("mindist")
+        p3d = reconst.reconstructPoint(p1, p2)
+        if p3d[2] < minDist:
+            minDist = abs(p3d[2])
+    return minDist
+
+def minDistToClusters(clusts1, clusts2, reconst, scaleFactor):
+    d = []
+    for clust1, clust2 in zip(clusts1, clusts2):
+        di = minDistToCluster(clust1, clust2, reconst)
+        if (di != 1e6):
+            print(di)
+            print(di * scaleFactor / 100)
+            d.append(di * scaleFactor / 100)
+    return d
 
 def unionClustToRect(clusters1, clusters2):
     rects1 = []
@@ -186,11 +238,8 @@ import glob
 
 images = [file for file in glob.glob(route)]
 
-first_two_frames = False
-
 rects = []
 storage = []
-show = True
 
 for i in range(1, len(images)):
     img1 = images[i]
@@ -211,47 +260,54 @@ for i in range(1, len(images)):
         first_two_frames = False
         continue
     selector = PointSelector(img1, img2)
-    drawer = Drawer(img1, img2, [0, 0, 255])
+    drawer = Drawer(img1, img2)
+
+
+    #pts1, pts2, good_new, good_old, road_new, road_old = selector.select()
 
     good_new, good_old, road_new, road_old = selector.select()
 
     pts1 = good_old
     pts2 = good_new
-    drawer.drawFlow(pts1, pts2, 'goodEnough.jpg', img1)
 
+    drawer.drawFlow(pts1, pts2, 'goodEnough.jpg', img2)
     outlierer = Outlierer()
     visOdom = VisOdometry(cam=cam, ptsold=pts1, ptsnew=pts2)
 
     # shitty code starts here
-    # magnitude outliers
     try:
+        # magnitude outliers
         out1, out2 = outlierer.optFLowMagnOutliers(pts1, pts2)
+        #drawer.drawPoints(out1, 'out1.jpg', selector.optFlow.img1, True)
         clusteredout1 = clst.clusterPoints(out1, MagicConstants.clusterConstant)
         clusteredout2 = clst.clusterPoints(out2, MagicConstants.clusterConstant)
 
         # good outliers by essential matrix
         clusteredout11 = clst.clusterPoints(visOdom.outold, MagicConstants.clusterConstant)
+        #drawer.drawPoints(visOdom.outold, 'out2.jpg', selector.optFlow.img1, True)
         clusteredout22 = clst.clusterPoints(visOdom.outnew, MagicConstants.clusterConstant)
     except Exception:
         continue
 
-    '''
     # epilines outliers
     outliers1 = outlierer.selectOutliers(pts1, visOdom.epilinesnew)
+    #drawer.drawPoints(outliers1, 'out3.jpg', selector.optFlow.img1, True)
     outliers2 = outlierer.selectOutliers(pts2, visOdom.epilinesold)
-
-    #ЗАХАРДКОДИМ?
     clusteredout0 = clst.clusterPoints(outliers1, MagicConstants.clusterConstant)
     clusteredout = clst.clusterPoints(outliers2, MagicConstants.clusterConstant)
 
     #clusteredout (for epilines), clusteredout11 (for optflowmagn) and clusteredout1 (for essenmat)
+
+    #check direction of epilines outliers
     clv = clusterVect(clustersnew=clusteredout, clustersold=clusteredout0)
     clv = removeOutliers(clv)
     newclv, oldclv = recoverClusters(clusteredout, clv)
-    '''
+
+    #check direction of magnflow outliers and essmat outliers
     clv1 = clusterVect(clustersold=clusteredout11, clustersnew=clusteredout22)
     clv1 = removeOutliers(clv1)
     newclv1, oldclv1 = recoverClusters(clusteredout22, clv1)
+    #...
     clv2 = clusterVect(clustersnew=clusteredout2, clustersold=clusteredout1)
     clv2 = removeOutliers(clv2)
     newclv2, oldclv2 = recoverClusters(clusteredout2, clv2)
@@ -262,7 +318,37 @@ for i in range(1, len(images)):
 
     rects = unionClustToRect(newclv2, newclv2)
     rects1 = unionClustToRect(newclv1, newclv1)
+    #abnormal
+    rects2 = unionClustToRect(newclv, newclv)
     rects = unionCloseRects(rects, rects1)
+    reconst = Reconstructor(cam, visOdom.R, visOdom.t)
+    p1 = [124, 258]
+    p2 = [115, 254]
+    p3 = [153, 254]
+    p4 = [146, 250]
+    points = np.array([p1,p2,p3,p4])
+    #drawer.drawPoints(points,'lel.jpg', selector.optFlow.img1, True)
+    p3d1 = reconst.reconstructPoint(p1,p2)
+    p3d2 = reconst.reconstructPoint(p3,p4)
+    lameDist = geom.dist3D(p3d1, p3d2)
+    realDist = 70 # centimeter
+    scaleFactor = realDist / lameDist
+    #scaleFactor = 20
+    print(scaleFactor)
+
+    if (reconstruct):
+        road1, road2 = selector.getPtsOnRoad()
+        cv2.imwrite("bottom.jpg", selector.bot1)
+        #drawer.drawFlow(road1, road2, 'out1out.jpg', selector.optFlow.img1, True)
+        road_plane, pts = reconst.pointCloud(road1, road2)
+        #drawer.plotCloud(pts)
+        #print(pts)
+        road_pts1, road_pts2 = reconst.pixelOnRoad(selector.optFlow.img1, selector.optFlow.img2, road_plane)
+        drawer.drawPoints(road_pts1, 'out.png', selector.optFlow.img1, True)
+    #print("everything")
+    #eq, everything = reconst.pointCloud(pts1, pts2, False)
+    #drawer.plotCloud(everything)
+    #reconst.reconstructPoint1([3,3])
     if (len(rects) != 0):
         storage = rects
     else:
@@ -281,18 +367,15 @@ for i in range(1, len(images)):
     plt.pause(0.0125)
     '''
     if (show):
+        d = minDistToClusters(oldclv2, newclv2, reconst, scaleFactor=scaleFactor)
+        print(d)
         plt.imshow(img, extent=[0,600,0,2], aspect=200)
         plt.draw()
-        plt.pause(0.001)
-
-    #reconst = Reconstructor(cam, visOdom.R, visOdom.t)
-    #road1, road2 = selector.getPtsOnRoad()
-    #drawer.drawFlow(road1, road2, 'out1out.jpg', selector.bot1, True)
-    #road_plane = reconst.pointCloud(road1, road2)
-    #cv2.imwrite("bottom.jpg", selector.bot1)
-    #road_pts1, road_pts2 = reconst.pixelOnRoad(selector.optFlow.img1, selector.optFlow.img2, road_plane)
-    #drawer.drawPoints(road_pts1, 'out.jpg', selector.optFlow.img1, True)
-
-    #reconst.reconstructPoint1([3,3])
+        plt.pause(2)
+        cv2.imwrite('clusters.jpg', img)
+        first_two_frames = True
+    else:
+        cv2.imwrite('clusters.jpg', img)
     print("lel")
     first_two_frames = True
+    #break

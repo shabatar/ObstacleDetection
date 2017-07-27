@@ -42,7 +42,7 @@ def plot3Dcloud(points3Dx, points3Dy, points3Dz, point, normal):
     plt.show()
 
 class Drawer:
-    def __init__(self, img1, img2, color=[255,0,0]):
+    def __init__(self, img1, img2, color=[30,255,255]):
         self.img1 = img1
         self.img2 = img2
         self.color = color
@@ -69,7 +69,7 @@ class Drawer:
         for p in pts1:
             #print(p)
             a, b = p[0], p[1]
-            frame = cv2.circle(frame, (a, b), 2, [0, 0, 255], -1)
+            frame = cv2.circle(frame, (a, b), 3, self.color, -1)
         cv2.imwrite(imgout, frame)
         return frame
 
@@ -83,8 +83,8 @@ class Drawer:
         for i, (new, old) in enumerate(zip(pts1, pts2)):
             a, b = new[0], new[1]
             c, d = old[0], old[1]
-            mask = cv2.line(mask, (a, b), (c, d), [0, 0, 255], 2)
-            frame = cv2.circle(frame, (a, b), 2, [0, 0, 255], -1)
+            mask = cv2.line(mask, (a, b), (c, d), self.color, 3)
+            frame = cv2.circle(frame, (a, b), 3, self.color, -1)
         img = cv2.add(frame, mask)
         cv2.imwrite(imgout, img)
         return img
@@ -102,6 +102,35 @@ class Drawer:
                 cv2.circle(frame1, (a, b), 4, color, -1)
                 cv2.rectangle(frame1, (minX, maxY), (maxX, minY), color, 3)
         return frame1
+
+    def plotCloud(self, pts3D): #pts3D = pointsXs, pointsYs, pointsZs
+        points3Dx, points3Dy, points3Dz = zip(*pts3D)
+        xmin = min(points3Dx)
+        ymin = min(points3Dy)
+        zmin = min(points3Dz)
+        zmax = max(points3Dz)
+        xmax = max(points3Dx)
+        ymax = max(points3Dy)
+        from mpl_toolkits.mplot3d import Axes3D
+        if (xmin == xmax or ymin == ymax or zmin == zmax):
+            return 0
+
+        #plt3d = plt.figure().gca(projection='3d')
+        #ax = plt.gca()
+        #ax.hold(True)
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+
+        ax.scatter(points3Dx, points3Dy, points3Dz, c='r', marker='*')
+        plt.savefig('fig.png')
+        # print(xmin)
+        plt.xlim(xmin, xmax)
+        # print(ymin)
+        plt.ylim(ymin, ymax)
+        # print(zmin)
+        ax.set_zlim(zmin, zmax)
+        plt.show()
 
     def drawRects(self, rects, imgsrc, color=None):
         color = color or self.color

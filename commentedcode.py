@@ -139,6 +139,42 @@ if(np.any(A*x + B*y + C*z + D) < 3):
         self.magicConstant = cnst.pointToSelect
         self.imgSize = size
 
+
+            p1 = pts1[i]  # pts1 = points on frame1
+            p1 = np.array([p1[0] + w / 2, p1[1] + h / 2, z])  # p1 in camera1 basis
+            x1, y1, z1 = p1[0], p1[1], p1[2]
+
+            p2 = pts2[i]  # pts2 = points on frame 2
+            p2 = np.array([p2[0] + w / 2, p2[1] + h / 2, z])  # p2 in camera2 basis
+            p2 = np.dot(self.rotMat, p2)  # p2 in camera1 basis
+
+            x2, y2, z2 = p2[0], p2[1], p2[2]
+
+            tx, ty, tz = self.trVect[0], self.trVect[1], self.trVect[2]  # translation vector
+
+            S1 = (ty * x1 - tx * y1) / (x2 * y1 - y2 * x1)
+            S2 = (tz * x1 - tx * z1) / (x2 * z1 - z2 * x1)
+            T1 = (tx + S1 * x2) / x1
+            T2 = (tx + S2 * x2) / x1
+            x0, y0, z0 = [0], [0], [0]
+            #print(abs((T1 * x1) - (tx + S1 * x2))[0])
+            if (np.all(abs((T1 * x1) - (tx + S1 * x2))) < EPS):
+                x0 = T1 * x1
+            if (np.all(abs((T1 * y1) - (ty + S1 * y2))) < EPS):
+                y0 = T1 * x1
+            if (np.all(abs((T1 * z1) - (tz + S1 * z2))) < EPS):
+                z0 = T1 * x1
+            if (abs((T2 * x1) - (tx + S2 * x2)) < EPS):
+                x0 = T2 * x1
+            if (abs((T2 * y1) - (ty + S2 * y2)) < EPS):
+                y0 = T2 * x1
+            if (np.all(abs((T2 * z1) - (tz + S2 * z2))) < EPS):
+                z0 = T2 * x1
+            points3Dx.append(x0)
+            points3Dy.append(y0)
+            points3Dz.append(z0)
+            pts3Ds.append([x0[0], y0[0], z0[0]])
+
     def cornerHarris(self):
         img = self.img2
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)

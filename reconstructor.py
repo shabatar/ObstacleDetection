@@ -4,200 +4,145 @@ from constants import MagicConstants
 from drawer import *
 import random
 import math
-
+from visodometry import Geometry
 class Reconstructor:
     def __init__(self, cam, rotMat, trVect):
         self.cam = cam
         self.rotMat = rotMat
         self.trVect = trVect
 
-    def planeByPoints(self, pt1, pt2, pt3):
-        x1,y1,z1 = pt1[0], pt1[1], pt1[2]
-        x2,y2,z2 = pt2[0], pt2[1], pt2[2]
-        x3,y3,z3 = pt3[0], pt3[1], pt3[2]
-        # Ax+By+Сz+D=0
-        # det{ {x-x1, y-y1, z-z1}, {x2-x1, y2-y1, z2-z1}, {x3-x1, y3-y1, z3-z1} } = 0
-        # x2-x1 = a2, y2-y1 = b2, z2-z1 = c2 etc.
-        A = (y2-y1)*(z3-z1)-(y3-y1)*(z2-z1)
-        B = (z2-z1)*(x3-x1)-(z3-z1)*(x2-x1)
-        C = (x2-x1)*(y3-y1)-(x3-x1)*(y2-y1)
-        D = x1*(-A)+y1*(-B)+z1*(-C)
-        return A,B,C,D
-
-    def distPlanePt(self, plane, pt):
-        plane = np.array(plane)
-        pt = np.array(pt)
-        pt = pt.tolist()
-        plane = plane.tolist()
-        #if (type(pt[0]) is list):
-        #    pt = [i[0] for i in plane]
-        ptx, pty, ptz = pt[0], pt[1], pt[2]
-        A, B, C, D = plane[0], plane[1], plane[2], plane[3]
-        if (A == 0.0 and B == 0.0 and C == 0.0):
-            #print("kek net ploskosti")
-            return 10000
-        up = abs(A*ptx + B*pty + C*ptz + D)
-        down = math.sqrt(A**2 + B**2 + C**2)
-        dst = up / down
-        return dst
+    def inliersCnt(self, points, plane):
+        cnt = 0
+        for p in points:
+            if (abs(plane[0] * p[0] + plane[1]*p[1] + plane[2]*p[2] + plane[3]) < MagicConstants.reconstructEPS):
+                cnt += 1
+        return cnt
 
     def planeFitRansac(self, points, equation=True):
-        best3pts = []
-        bestPlane = 0, 0, 0, 0
         just3pts = random.sample(points, 3)
-        plane = self.planeByPoints(just3pts[0], just3pts[1], just3pts[2])
-        sumBest = sum(self.distPlanePt(plane, pt) for pt in points)
+        best3pts = just3pts
+        plane = Geometry.planeByPoints(just3pts[0], just3pts[1], just3pts[2])
+        bestCnt = sum(Geometry.distPlanePt(plane, pt) for pt in points)
+        #bestCnt = self.inliersCnt(points, plane)
         bestPlane = plane
-        for i in range(0, 50):
+        for i in range(0, 150):
             just3pts = random.sample(points, 3)
-            plane = self.planeByPoints(just3pts[0], just3pts[1], just3pts[2])
-            sumofSqDist = sum([self.distPlanePt(plane, pt) for pt in points])
-            if sumofSqDist < sumBest:
-                sumBest = sumofSqDist
+            plane = Geometry.planeByPoints(just3pts[0], just3pts[1], just3pts[2])
+            cnt = sum([Geometry.distPlanePt(plane, pt) for pt in points])
+            #cnt = self.inliersCnt(points, plane)
+            if cnt < bestCnt:
+                bestCnt = cnt
                 best3pts = just3pts
                 bestPlane = plane
-        if(equation == False):
+        if (equation == False):
             point = random.sample(best3pts, 1)
             normal = bestPlane[0], bestPlane[1], bestPlane[2]
             return point, normal
+        #print(bestCnt / len(points))
+        print("bestcnt="+str(bestCnt))
         return bestPlane
 
-    def PCA(self, data, correlation=False, sort=True):
-        mean = np.mean(data, axis=0)
-        data_adjust = data - mean
-        # matrix = np.corrcoef(data_adjust.T)
-        #: the data is transposed due to np.cov/corrcoef syntax
-        if correlation:
-            matrix = np.corrcoef(data_adjust.T)
-
-        else:
-            matrix = np.cov(data_adjust.T)
-
-        eigenvalues, eigenvectors = np.linalg.eig(matrix)
-
-        if sort:
-            #: sort eigenvalues and eigenvectors
-            sort = eigenvalues.argsort()[::-1]
-            eigenvalues = eigenvalues[sort]
-            eigenvectors = eigenvectors[:, sort]
-
-        return eigenvalues, eigenvectors
-
-    def outlierRemove(self, kdtree, k=20, z_max=80, y_max=90, x_max=80):
-        distances, i = kdtree.query(kdtree.data, k=k)
-        from scipy.stats import zscore
-        z_distances = zscore(np.mean(distances, axis=1))
-        zfilter = abs(z_distances) < z_max
-        return zfilter
-
-    def bestFitPlane(self, points, equation=True):
-        from scipy.spatial import KDTree
-        points = [np.array(point) for point in points]
-        points = np.array(points)
-        points = KDTree(points, leafsize=points.shape[0]+1)
-        filter = self.outlierRemove(points)
-        points1 = []
-        for i in range(0, points.data.shape[0]):
-            point = points.data[i]
-            if (filter[i] == True):
-                points1.append([point[0], point[1], point[2]])
-        points = points1
-        w, v = self.PCA(points)
-        import random
-        points = random.sample(points, MagicConstants.roadPlanePts)
-        #: the normal of the plane is the last eigenvector
-        normal = v[:, 2]
-
-        #: get a point from the plane
-        point = np.mean(points, axis=0)
-
-        if equation:
-            a, b, c = normal
-            d = -(np.dot(normal, point))
-            for p in points:
-                continue
-                #print(a*p[0]+b*p[1]+c*p[2]+d)
-            return a, b, c, d
-        else:
-            return point, normal
-
-    def reconstructPoint1(self, point1, point2):
-        z = 1
-        w, h = (200,200)
-        rotMat = np.array([
-            [1.000000e+00, 0.000000e+00, 0.000000e+00],
-            [0.000000e+00, math.sqrt(2) / 2, - math.sqrt(2) / 2],
-            [0.000000e+00, math.sqrt(2) / 2, math.sqrt(2) / 2]
-        ])
-        trVect = np.array([
-            [1.000000e+00],
-            [1.000000e+00],
-            [1.000000e+00]
-        ])
-        p1 = point1
-        p1 = np.array([p1[0] + w / 2, p1[1] + h / 2, z])  # p1 in camera1 basis
-        x1, y1, z1 = p1[0], p1[1], p1[2]
-
-        p2 = point2
-        p2 = np.array([p2[0] + w / 2, p2[1] + h / 2, z])  # p2 in camera2 basis
-        p2 = np.dot(self.rotMat, p2)  # p2 in camera1 basis
-        x2, y2, z2 = p2[0], p2[1], p2[2]
-
-        tx, ty, tz = self.trVect[0], self.trVect[1], self.trVect[2]  # translation vector
-
-        S1 = (ty * x1 - tx * y1) / (x2 * y1 - y2 * x1)
-        S2 = (tz * x1 - tx * z1) / (x2 * z1 - z2 * x1)
-        T1 = (tx + S1 * x2) / x1
-        T2 = (tx + S2 * x2) / x1
-        x0, y0, z0 = [0.0], [0.0], [0.0]
-        if (np.all(abs((T1 * x1) - (tx + S1 * x2))) < MagicConstants.reconstructEPS):
-            x0 = T1 * x1
-        if (np.all(abs((T1 * y1) - (ty + S1 * y2))) < MagicConstants.reconstructEPS):
-            y0 = T1 * x1
-        if (np.all(abs((T1 * z1) - (tz + S1 * z2))) < MagicConstants.reconstructEPS):
-            z0 = T1 * x1
-        if (np.all(abs((T2 * x1) - (tx + S2 * x2))) < MagicConstants.reconstructEPS):
-            x0 = T2 * x1
-        if (np.all(abs((T2 * y1) - (ty + S2 * y2))) < MagicConstants.reconstructEPS):
-            y0 = T2 * x1
-        if (np.all(abs((T2 * z1) - (tz + S2 * z2))) < MagicConstants.reconstructEPS):
-            z0 = T2 * x1
-        return [x0, y0, z0]
-
-    def reconstructPoint(self, point1, point2):
+    def reconstructPoint(self, point1, point2, plot=False):
         z = self.cam.focal
         w, h = self.cam.imgsize
-        p1 = point1
-        p1 = np.array([p1[0] + w / 2, p1[1] + h / 2, z])  # p1 in camera1 basis
+        tx, ty, tz = self.trVect[0], self.trVect[1], self.trVect[2]  # translation vector
+        # p1 в базисе первой камеры
+        # p[0] ... p[1] так было и +
+        p1 = np.array([point1[0] - w / 2, point1[1] - h / 2, z])  # p1 in camera1 basis
         x1, y1, z1 = p1[0], p1[1], p1[2]
 
-        p2 = point2
-        p2 = np.array([p2[0] + w / 2, p2[1] + h / 2, z])  # p2 in camera2 basis
-        p2 = np.dot(self.rotMat, p2)  # p2 in camera1 basis
+        # (0,0,z) - центр первого кадра в базисе первой камеры, считаем центр второго кадра..
+        pp2 = np.dot(self.rotMat, np.array([0+tx,0+ty,z+tz]))  # точка центра после переноса
+        #cam2 = [pp2[0][0], pp2[1][0], pp2[2][0]-z] # переместили камеру по z-координате от точки центра
+        pp2 = [pp2[0][0], pp2[1][0], pp2[2][0]] # numpy-евская херня
+        r1 = [-w / 2, -h / 2, z]
+        r2 = [-w / 2, h / 2, z]
+        r3 = [w / 2, h / 2, z]
+        r21 = np.dot(self.rotMat, np.array([r1[0] + tx, r1[1] + ty, r1[2] + tz]))
+        r22 = np.dot(self.rotMat, np.array([r2[0] + tx, r2[1] + ty, r2[2] + tz]))
+        r23 = np.dot(self.rotMat, np.array([r3[0] + tx, r3[1] + ty, r3[2] + tz]))
+        r21 = [r21[0][0], r21[1][0], r21[2][0]]
+        r22 = [r22[0][0], r22[1][0], r22[2][0]]
+        r23 = [r23[0][0], r23[1][0], r23[2][0]]
+        frame2 = Geometry.planeByPoints(r23, r21, r22)
+        normal = Geometry.unitVect(np.array([frame2[0], frame2[1], frame2[2]]))
+        d = z
+        cam2 = [pp2[0] + d * normal[0], pp2[1] + d * normal[1], pp2[2] + d * normal[2]]
+        #cam2 = np.dot(self.rotMat, np.array([tx[0], ty[0], tz[0]]))
+
+        # ищем вторую точку в первом базисе
+        # p[0] ... p[1] так было и +
+        p2 = np.array([point2[0] - w / 2, point2[1] - h / 2, z])  # вторая точка во втором базисе (z изменилось)
+        p2 = np.dot(self.rotMat, np.array([p2[0]+tx, p2[1]+ty, p2[2]+tz]))  # вторая точка в первом базисе
+        #p2[2] = pp2[2]
         x2, y2, z2 = p2[0], p2[1], p2[2]
 
-        tx, ty, tz = self.trVect[0], self.trVect[1], self.trVect[2]  # translation vector
+        A = np.array([
+            [x1, -x2, 0],
+            [y1, -y2, 0],
+            [z1, -z2, 0]
+        ])
+        b = np.array([tx, ty, tz])
+        point = np.linalg.lstsq(A, b)[0]
+        T, S = point[0], point[1]
+        x0 = T * x1
+        y0 = T * y1
+        z0 = T * z1
 
-        S1 = (ty * x1 - tx * y1) / (x2 * y1 - y2 * x1)
-        S2 = (tz * x1 - tx * z1) / (x2 * z1 - z2 * x1)
-        T1 = (tx + S1 * x2) / x1
-        T2 = (tx + S2 * x2) / x1
-        x0, y0, z0 = [0.0], [0.0], [0.0]
-        if (np.all(abs((T1 * x1) - (tx + S1 * x2))) < MagicConstants.reconstructEPS):
-            x0 = T1 * x1
-        if (np.all(abs((T1 * y1) - (ty + S1 * y2))) < MagicConstants.reconstructEPS):
-            y0 = T1 * x1
-        if (np.all(abs((T1 * z1) - (tz + S1 * z2))) < MagicConstants.reconstructEPS):
-            z0 = T1 * x1
-        if (np.all(abs((T2 * x1) - (tx + S2 * x2))) < MagicConstants.reconstructEPS):
-            x0 = T2 * x1
-        if (np.all(abs((T2 * y1) - (ty + S2 * y2))) < MagicConstants.reconstructEPS):
-            y0 = T2 * x1
-        if (np.all(abs((T2 * z1) - (tz + S2 * z2))) < MagicConstants.reconstructEPS):
-            z0 = T2 * x1
+        if (plot):
+            from mpl_toolkits.mplot3d import Axes3D
+            from matplotlib import pyplot as plt
+            #print([x0[0], y0[0], z0[0]])
+
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+            #r1 = [-w/2, -h/2, z]
+            #r2 = [-w/2,  h/2, z]
+            #r3 = [w/2,   h/2, z]
+            r4 = [w/2,  -h/2, z]
+            # img1
+            x1ar = [-w/2, -w/2, +w/2, +w/2, -w/2]
+            y1ar = [-h/2, +h/2, +h/2, -h/2, -h/2]
+            z1ar = [   z,    z,    z,    z,    z]
+
+            #r21 = np.dot(self.rotMat, np.array([r1[0] + tx, r1[1] + ty, r1[2] + tz]))
+            #r22 = np.dot(self.rotMat, np.array([r2[0] + tx, r2[1] + ty, r2[2] + tz]))
+            #r23 = np.dot(self.rotMat, np.array([r3[0] + tx, r3[1] + ty, r3[2] + tz]))
+            r24 = np.dot(self.rotMat, np.array([r4[0] + tx, r4[1] + ty, r4[2] + tz]))
+            #r21 = [r21[0][0], r21[1][0], r21[2][0]]
+            #r22 = [r22[0][0], r22[1][0], r22[2][0]]
+            #r23 = [r23[0][0], r23[1][0], r23[2][0]]
+            r24 = [r24[0][0], r24[1][0], r24[2][0]]
+            # img2
+            x2ar = [r21[0], r22[0], r23[0], r24[0], r21[0]]
+            y2ar = [r21[1], r22[1], r23[1], r24[1], r21[1]]
+            z2ar = [r21[2], r22[2], r23[2], r24[2], r21[2]]
+            #verts = [zip(x, y, z)]
+            #ax.add_collection3d(Poly3DCollection(verts))
+            #ax.scatter(0, 0, z-, c='g', marker='*')
+            #ax.plot([0], [0], [0], c='g')
+            ax.plot(x1ar, y1ar, z1ar, c='g')
+            ax.plot(x2ar, y2ar, z2ar, c='m')
+            ax.scatter(cam2[0], cam2[1], cam2[2], c='m', marker='*')
+            ax.scatter(pp2[0], pp2[1], pp2[2], c='m', marker='o')
+            ax.scatter(0, 0, z, c='g', marker='*')
+            ax.scatter(x2, y2, z2, c='m',marker='o')
+            ax.plot([0, x1], [0, y1], [0, z1], c='g',marker='*')
+            ax.plot([cam2[0], x2], [cam2[1], y2], [cam2[2], z2], c='m',marker='*')
+            ax.plot([0, x0], [0, y0], [0, z0], c='b', marker='*')
+            plt.xlim(-750, 750)
+            # print(ymin)
+            plt.ylim(-200, 200)
+            # print(zmin)
+            ax.set_zlim(-2, 1000)
+            plt.show()
+        #print([x0[0], y0[0], z0[0]])
+        print(z0[0] > 0)
         return [x0[0], y0[0], z0[0]]
 
-    def pointCloud(self, pts1, pts2):
+    def pointCloud(self, pts1, pts2, plot=False):
         EPS = 0.001
         points3Dx = []
         points3Dy = []
@@ -206,7 +151,7 @@ class Reconstructor:
         z = self.cam.focal
         w, h = self.cam.imgsize
         for i in range(0, len(pts1)):
-            point3D = self.reconstructPoint(pts1[i], pts2[i])
+            point3D = self.reconstructPoint(pts1[i], pts2[i],plot)
             points3Dx.append(point3D[0])
             points3Dy.append(point3D[1])
             points3Dz.append(point3D[2])
@@ -214,52 +159,51 @@ class Reconstructor:
         # pts3Ds = np.array(pts3Ds)
         point, normal = self.planeFitRansac(pts3Ds, False)
         equation = self.planeFitRansac(pts3Ds)
-        # print(plane)
-        #plot3Dcloud(points3Dx, points3Dy, points3Dz, point, normal)
-        return equation
+        # print(equation)
+        plot3Dcloud(points3Dx, points3Dy, points3Dz, point, normal)
+        args = zip(points3Dx, points3Dy, points3Dz)
+        return equation, args
 
-    def pixelOnRoad(self, botimg1, botimg2, plane):
+    def pixelOnRoad(self, img1, img2, plane):
         road_pts1 = []
         road_pts2 = []
-        height, width, depth = botimg1.shape
-        bot1gr = cv2.cvtColor(botimg1, cv2.COLOR_BGR2GRAY)
-        bot2gr = cv2.cvtColor(botimg2, cv2.COLOR_BGR2GRAY)
+        height, width, depth = img1.shape
+        img1gr = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+        img2gr = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
 
-        #print(botimg1.shape)
-        #print(botimg2.shape)
-        flow = cv2.calcOpticalFlowFarneback(bot1gr, bot2gr, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+        flow = cv2.calcOpticalFlowFarneback(img1gr, img2gr, None, 0.5, 3, 15, 3, 5, 1.2, 0)
         #print(flow)
         pts1 = []
         pts2 = []
-        for i in range(8, height-8, 8):
-            for j in range(8, width-8, 8):
-                # было по другому -- j i !!
-                point2 = [j+0.0, i+0.0]
-                pts2.append(point2)
-                #print(flow[i][j])
-                point1 = [j-flow[i][j][0]+0.0, i-flow[i][j][1]+0.0]
+        for i in range(0, width, 4):
+            for j in range(0, height, 4):
+                # верно!!
+                point2 = [i+0.0, j+0.0]
+                point1 = [int(i-flow[j][i][0]+0.0), int(j-flow[j][i][1]+0.0)]
                 pts1.append(point1)
+                pts2.append(point2)
+                # ??
                 point3D = self.reconstructPoint(point1, point2)
                 A, B, C, D = plane[0], plane[1], plane[2], plane[3]
                 #print("A="+str(A) + "B="+str(B)+"C="+str(C)+"D="+str(D))
-                #print(point3D)
                 x, y, z = point3D[0], point3D[1], point3D[2]
                 #print("x="+str(x)+"y="+str(y)+"z="+str(z))
-                #print(plane)
-                #print(point3D[0])
                 plane = [A, B, C, D]
                 #point3D = point3D.tolist()
-                ev = self.distPlanePt(plane, point3D)
-                    #ev = A * x[0] + B * y[0] + C * z[0] + D
-                #print(ev)
-                if (abs(ev) <= MagicConstants.distToRoad):
+                ev1 = Geometry.distPlanePt(plane, point3D)
+                ev = A * x + B * y + C * z + D
+                #print("ev1" + str(ev1))
+                #print("ev" + str(ev))
+                if (ev == 0.0):
+                    print("0.0.0")
+                if (abs(ev) < MagicConstants.distToRoad):
                     #print(ev)
                     road_pts1.append(point1)
                     road_pts2.append(point2)
-        drw = Drawer(botimg1, botimg2)
+        drw = Drawer(img1, img2)
         pts1 = np.int32(pts1)
         pts2 = np.int32(pts2)
-        #drw.drawFlow(pts1, pts2, 'outout.jpg', botimg2, True)
+        #drw.drawFlow(pts1, pts2, 'outout.jpg', img2, True)
         road_pts1 = np.int32(road_pts1)
         road_pts2 = np.int32(road_pts2)
         return road_pts1, road_pts2

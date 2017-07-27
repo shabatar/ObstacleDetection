@@ -4,12 +4,14 @@ import random
 from drawer import Drawer
 import math
 from constants import MagicConstants
-
+from visodometry import Geometry
+from drawer import Drawer
 
 class OpticalFlow:
     def __init__(self, img1, img2, read, blur):
         if (not read):
             self.img1 = cv2.imread(img1)
+            #print(self.img1.shape)
             self.img2 = cv2.imread(img2)
         else:
             self.img1 = img1
@@ -20,6 +22,7 @@ class OpticalFlow:
         # initial points
         self.pts1 = []
         self.pts2 = []
+        self.drw = Drawer(self.img1, self.img2)
 
     def cornerHarris(self):
         img = self.img2
@@ -46,8 +49,13 @@ class OpticalFlow:
             corners = corners[:, np.newaxis]
             return corners
 
-        # cv2.imwrite('harris.png',img)
+        #cv2.imwrite('harris.png',img)
         corners = corners[:, np.newaxis]
+        corners1 = []
+        for p in corners:
+            p1 = [p[0][0], p[0][1]]
+            corners1.append(p1)
+        #self.drw.drawPoints(corners1, 'harris.png', self.img1, True)
         return corners
 
     def lucasKanade(self):
@@ -93,6 +101,7 @@ class OpticalFlow:
         good_new = p1[st == 1]
         good_old = p0[st == 1]
 
+        #self.drw.drawFlow(good_old, good_new, 'optFlow.png', self.img1, True)
         for i, (new, old) in enumerate(zip(good_new, good_old)):
             a, b = new.ravel()
             c, d = old.ravel()
@@ -108,34 +117,36 @@ class PointSelector:
     def __init__(self, img1, img2, read=False, blur=True):
         self.optFlow = OpticalFlow(img1, img2, read, blur)
 
-    def moduleVect(self, vector):
-        return math.sqrt(vector[0] ** 2 + vector[1] ** 2)
-
     def largeModule(self, vector):
-        return (self.moduleVect(vector) > MagicConstants.largeModuleCnst * self.optFlow.img1.shape[0] or
-                self.moduleVect(vector) > MagicConstants.largeModuleCnst * self.optFlow.img1.shape[1])
+        return (Geometry.moduleVect(vector) > MagicConstants.largeModuleCnst * self.optFlow.img1.shape[0] or
+                Geometry.moduleVect(vector) > MagicConstants.largeModuleCnst * self.optFlow.img1.shape[1])
 
     def getPtsOnRoad(self):
         height, width, depth = self.optFlow.img2.shape
-        newh = height // 3
-        neww = width // 6
+        newh = height // 10
+        neww = width // 9
         img1 = cv2.cvtColor(self.optFlow.img1, cv2.COLOR_BGR2GRAY)
         img2 = cv2.cvtColor(self.optFlow.img2, cv2.COLOR_BGR2GRAY)
-        self.bot1 = img1[newh * 2: height, 2 * neww: 3 * neww]
-        self.bot2 = img2[newh * 2: height, 2 * neww: 3 * neww]
+        new0y = newh * 8
+        new0x = neww * 3
+        self.bot1 = img1[new0y: newh * 10, new0x: 4 * neww]
+        self.bot2 = img2[new0y: newh * 10, new0x: 4 * neww]
         flow = cv2.calcOpticalFlowFarneback(self.bot1, self.bot2, None, 0.5, 3, 15, 3, 5, 1.2, 0)
         pts1 = []
         pts2 = []
-        for i in range(5, newh-5, 5):
-            for j in range(5, neww-5, 5):
-                point2 = [j + 0.0, i + 0.0]
-                point1 = [j - flow[i][j][0] + 0.0, i - flow[i][j][1] + 0.0]
+        for i in range(0, self.bot1.shape[1], 4):
+            for j in range(0, self.bot1.shape[0], 4):
+                #good version
+                point2 = [new0x + i + 0.0, new0y + j + 0.0]
+                point1 = [new0x + i - flow[j][i][0] + 0.0, new0y + j - flow[j][i][1] + 0.0]
+                #point1 = [3 * neww + i + 0.0, 3 * newh + j + 0.0]
+                #point2 = [3 * neww + i + flow[j][i][0] + 0.0, 3 * newh + j + flow[j][i][1] + 0.0]
                 pts1.append(point1)
                 pts2.append(point2)
-        randIndex = random.sample(range(len(pts1)), MagicConstants.pointToSelect * 2)
-        randIndex.sort()
-        pts1 = [pts1[i] for i in randIndex]
-        pts2 = [pts2[i] for i in randIndex]
+        #randIndex = random.sample(range(len(pts1)), MagicConstants.pointToSelect)
+        #randIndex.sort()
+        #pts1 = [pts1[i] for i in randIndex]
+        #pts2 = [pts2[i] for i in randIndex]
         pts1 = np.int32(pts1)
         pts2 = np.int32(pts2)
         return pts1, pts2
@@ -144,6 +155,7 @@ class PointSelector:
         # imgs, good_old_points in imgs, good_new_points in imgs
         # returns good_enough_old_p and new
         good_new, good_old = self.optFlow.lucasKanade()
+
         good_new1 = [[point[0], point[1]] for point in good_new]
         good_old1 = [[point[0], point[1]] for point in good_old]
         #remove too large vectors
@@ -190,7 +202,7 @@ class PointSelector:
             elif b < size[0] and d < size[0]:
                 botimgcnt += 1
                 b0.append((new, old))
-                # pts[(new, old)] = "road"
+                # pts[(nexrw, old)] = "road"
             else:
                 chimgcnt += 1
         goodnum1 = min(goodnum, min(len(b0), min(len(m0), len(t0))))
@@ -208,8 +220,8 @@ class PointSelector:
         for i, (new, old) in enumerate(t0):
             a, b = new.ravel()
             c, d = old.ravel()
-            mask = cv2.line(mask, (a, b), (c, d), [255, 0, 0], 2)
-            img2 = cv2.circle(img2, (a, b), 2, [255, 0, 0], -1)
+            mask = cv2.line(mask, (a, b), (c, d), [30, 255, 255], 2)
+            img2 = cv2.circle(img2, (a, b), 2, [30, 255, 255], -1)
         img = cv2.add(img2, mask)
         # print(road)
         cv2.imwrite('goodEnough.jpg', img)
@@ -222,6 +234,7 @@ class PointSelector:
             road_new, road_old = self.getPtsOnRoad()
         #if (not good_new or not good_old):
         #    return (0,0)
+        # было просто
         good_old = np.int32(good_old)
         good_new = np.int32(good_new)
 

@@ -1,12 +1,13 @@
 import cv2
 import numpy as np
 import math
-
-
-def dist(point1, point2):
-    return math.sqrt((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2)
+from visodometry import Geometry
 
 class Cluster:
+    #def __init__(self, oldpts, newpts):
+    #    self.oldpts = oldpts
+    #    self.newpts = newpts
+
     def getNearbyPoints(self, unassigned, point, eps):
         if point in unassigned:
             unassigned.remove(point)
@@ -15,15 +16,15 @@ class Cluster:
             nextNeighbours = []
             for neighbour in nearby:
                 for pretender in unassigned:
-                    if 0.001 < dist(neighbour, pretender) < eps:
+                    if 0.001 < Geometry.dist(neighbour, pretender) < eps:
                         nextNeighbours.append(pretender)
                         unassigned.remove(pretender)
             nearby += nextNeighbours
             if len(nextNeighbours) == 0:
                 return nearby
                 # map(lambda p: unassigned.remove(p), nearby)
-
         return nearby
+
     def clusterPoints(self, points, eps):  # eps = num of pixels to be considered as close enough
         unassigned = [(point[0], point[1]) for point in points]
         clusters = []

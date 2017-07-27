@@ -1,4 +1,5 @@
 class MagicConstants:
+    #70, minPinCl = 5
     clusterConstant = 70
     closeToEpipolar = 2
     optFlowMagn = 7
@@ -7,9 +8,10 @@ class MagicConstants:
     meanShiftN = 16
     pointToSelect = 42
     subtractGNum = 20
-    reconstructEPS = 0.00001
+    reconstructEPS = 0.03
     largeModuleCnst = 0.3
     roadPlanePts = 6
-    critAlpha = 1
+    critAlpha = 0.5
     minPinClust = 5
-    distToRoad = 0.3
+    distToRoad = 0.1
+    scaleFactor = 76.36319217722199
