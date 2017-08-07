@@ -22,15 +22,15 @@ class Reconstructor:
         just3pts = random.sample(points, 3)
         best3pts = just3pts
         plane = Geometry.planeByPoints(just3pts[0], just3pts[1], just3pts[2])
-        bestCnt = sum(Geometry.distPlanePt(plane, pt) for pt in points)
-        #bestCnt = self.inliersCnt(points, plane)
+        #bestCnt = sum(Geometry.distPlanePt(plane, pt) for pt in points)
+        bestCnt = self.inliersCnt(points, plane)
         bestPlane = plane
         for i in range(0, 150):
             just3pts = random.sample(points, 3)
             plane = Geometry.planeByPoints(just3pts[0], just3pts[1], just3pts[2])
-            cnt = sum([Geometry.distPlanePt(plane, pt) for pt in points])
-            #cnt = self.inliersCnt(points, plane)
-            if cnt < bestCnt:
+            #cnt = sum([Geometry.distPlanePt(plane, pt) for pt in points])
+            cnt = self.inliersCnt(points, plane)
+            if cnt > bestCnt:
                 bestCnt = cnt
                 best3pts = just3pts
                 bestPlane = plane
@@ -68,7 +68,6 @@ class Reconstructor:
         normal = Geometry.unitVect(np.array([frame2[0], frame2[1], frame2[2]]))
         d = z
         cam2 = [pp2[0] + d * normal[0], pp2[1] + d * normal[1], pp2[2] + d * normal[2]]
-        #cam2 = np.dot(self.rotMat, np.array([tx[0], ty[0], tz[0]]))
 
         # ищем вторую точку в первом базисе
         # p[0] ... p[1] так было и +
@@ -139,8 +138,11 @@ class Reconstructor:
             ax.set_zlim(-2, 1000)
             plt.show()
         #print([x0[0], y0[0], z0[0]])
-        print(z0[0] > 0)
-        return [x0[0], y0[0], z0[0]]
+        if(z0[0] >= 0):
+            return [x0[0], y0[0], z0[0]]
+        else:
+            #print("точка за камерой")
+            return [0, 0, 0]
 
     def pointCloud(self, pts1, pts2, plot=False):
         EPS = 0.001
@@ -160,7 +162,8 @@ class Reconstructor:
         point, normal = self.planeFitRansac(pts3Ds, False)
         equation = self.planeFitRansac(pts3Ds)
         # print(equation)
-        plot3Dcloud(points3Dx, points3Dy, points3Dz, point, normal)
+        if(plot):
+            plot3Dcloud(points3Dx, points3Dy, points3Dz, point, normal)
         args = zip(points3Dx, points3Dy, points3Dz)
         return equation, args
 
@@ -182,18 +185,11 @@ class Reconstructor:
                 point1 = [int(i-flow[j][i][0]+0.0), int(j-flow[j][i][1]+0.0)]
                 pts1.append(point1)
                 pts2.append(point2)
-                # ??
                 point3D = self.reconstructPoint(point1, point2)
                 A, B, C, D = plane[0], plane[1], plane[2], plane[3]
-                #print("A="+str(A) + "B="+str(B)+"C="+str(C)+"D="+str(D))
                 x, y, z = point3D[0], point3D[1], point3D[2]
-                #print("x="+str(x)+"y="+str(y)+"z="+str(z))
                 plane = [A, B, C, D]
-                #point3D = point3D.tolist()
-                ev1 = Geometry.distPlanePt(plane, point3D)
                 ev = A * x + B * y + C * z + D
-                #print("ev1" + str(ev1))
-                #print("ev" + str(ev))
                 if (ev == 0.0):
                     print("0.0.0")
                 if (abs(ev) < MagicConstants.distToRoad):
@@ -207,58 +203,4 @@ class Reconstructor:
         road_pts1 = np.int32(road_pts1)
         road_pts2 = np.int32(road_pts2)
         return road_pts1, road_pts2
-
-        '''
-        road_pts1 = []
-        road_pts2 = []
-        height, width, depth = botimg1.shape
-        bot1gr = cv2.cvtColor(botimg1, cv2.COLOR_BGR2GRAY)
-        bot2gr = cv2.cvtColor(botimg2, cv2.COLOR_BGR2GRAY)
-        lk_params = dict(winSize=(15, 15),
-                         maxLevel=2,
-                         criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
-        for point1, point2 in zip(bot1gr, bot2gr):
-            point1 = [point1[0], point1[1]]
-            point2 = [point2[0], point2[1]]
-            #print(point1)
-            point3D = self.reconstructPoint(point1, point2)
-            A, B, C, D = plane[0], plane[1], plane[2], plane[3]
-            x, y, z = point3D[0], point3D[1], point3D[2]
-            if (np.any(A * x + B * y + C * z + D) < 6):
-                #print("kek")
-                road_pts1.append(point1)
-                road_pts2.append(point2)
-        return road_pts1, road_pts2
-        #sel = PointSelector(botimg1, botimg2, (width, height), 80, True)
-        #road1, road2 = sel.lucasKanade()
-        #drw = Drawer(botimg1, botimg2)
-        #drw.drawFlow(road1, road2, 'bottom.jpg', botimg1, True)
-        #for point1, point2 in zip(road1, road2):
-        #points1 = []
-        #for i in range(4, height-4, 4):
-        #    for j in range(4, width-4, 4):
-        #        points1.append([[j + 0.0,i + 0.0]])
-        #points1 = np.array(points1)
-        #print(points1)
-        '''
-        '''
-        print(bot1gr.shape)
-        print(bot2gr.shape)
-        flow = cv2.calcOpticalFlowFarneback(bot1gr, bot2gr, None, 0.5, 3, 15, 3, 5, 1.2, 0)
-        #print(flow)
-        for i in range(4, height-4, 4):
-            for j in range(4, width-4, 4):
-                point2 = [i+0.0, j+0.0]
-                print(flow[i][j])
-                point1 = [i-flow[i][j]+0.0, j-flow[i][j]+0.0]
-                point3D = self.reconstructPoint(point1, point2)
-                A, B, C, D = plane[0], plane[1], plane[2], plane[3]
-                x, y, z = point3D[0], point3D[1], point3D[2]
-                if (np.any(A * x + B * y + C * z + D) < 3):
-                    print(point2)
-                    print(point1)
-                    road_pts1.append(point1)
-                    road_pts2.append(point2)
-        return road_pts1, road_pts2
-        '''
 

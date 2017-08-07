@@ -8,9 +8,10 @@ class Geometry:
     @staticmethod
     def unitVect(vector):
         return vector / np.linalg.norm(vector)
-    def angleVect(self, v1, v2):
-        v1_u = self.unitVect(v1)
-        v2_u = self.unitVect(v2)
+    @staticmethod
+    def angleVect(v1, v2):
+        v1_u = Geometry.unitVect(v1)
+        v2_u = Geometry.unitVect(v2)
         return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
     def dist3D(self, p1, p2):
         return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2 + (p1[2] - p2[2]) ** 2)
