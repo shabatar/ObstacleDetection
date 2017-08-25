@@ -5,6 +5,7 @@ from drawer import *
 import random
 import math
 from visodometry import Geometry
+
 class Reconstructor:
     def __init__(self, cam, rotMat, trVect):
         self.cam = cam
@@ -14,7 +15,7 @@ class Reconstructor:
     def inliersCnt(self, points, plane):
         cnt = 0
         for p in points:
-            if (abs(plane[0] * p[0] + plane[1]*p[1] + plane[2]*p[2] + plane[3]) < MagicConstants.reconstructEPS):
+            if (abs(plane[0] * p[0] + plane[1] * p[1] + plane[2] * p[2] + plane[3]) < MagicConstants.reconstructEPS):
                 cnt += 1
         return cnt
 
@@ -42,6 +43,56 @@ class Reconstructor:
         print("bestcnt="+str(bestCnt))
         return bestPlane
 
+    def plotReconstructed(self, w, h, z, r21, r22, r23, cam2, pp2, x0, y0, z0, x1, y1, z1, x2, y2, z2, tx, ty, tz):
+        from mpl_toolkits.mplot3d import Axes3D
+        from matplotlib import pyplot as plt
+        # print([x0[0], y0[0], z0[0]])
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+        # r1 = [-w/2, -h/2, z]
+        # r2 = [-w/2,  h/2, z]
+        # r3 = [w/2,   h/2, z]
+        r4 = [w / 2, -h / 2, z]
+        # img1
+        x1ar = [-w / 2, -w / 2, +w / 2, +w / 2, -w / 2]
+        y1ar = [-h / 2, +h / 2, +h / 2, -h / 2, -h / 2]
+        z1ar = [z, z, z, z, z]
+
+        # r21 = np.dot(self.rotMat, np.array([r1[0] + tx, r1[1] + ty, r1[2] + tz]))
+        # r22 = np.dot(self.rotMat, np.array([r2[0] + tx, r2[1] + ty, r2[2] + tz]))
+        # r23 = np.dot(self.rotMat, np.array([r3[0] + tx, r3[1] + ty, r3[2] + tz]))
+        r24 = np.dot(self.rotMat, np.array([r4[0] + tx, r4[1] + ty, r4[2] + tz]))
+        # r21 = [r21[0][0], r21[1][0], r21[2][0]]
+        # r22 = [r22[0][0], r22[1][0], r22[2][0]]
+        # r23 = [r23[0][0], r23[1][0], r23[2][0]]
+        r24 = [r24[0][0], r24[1][0], r24[2][0]]
+        # img2
+        x2ar = [r21[0], r22[0], r23[0], r24[0], r21[0]]
+        y2ar = [r21[1], r22[1], r23[1], r24[1], r21[1]]
+        z2ar = [r21[2], r22[2], r23[2], r24[2], r21[2]]
+        # verts = [zip(x, y, z)]
+        # ax.add_collection3d(Poly3DCollection(verts))
+        # ax.scatter(0, 0, z-, c='g', marker='*')
+        # ax.plot([0], [0], [0], c='g')
+        ax.plot(x1ar, y1ar, z1ar, c='g')
+        ax.plot(x2ar, y2ar, z2ar, c='m')
+        ax.scatter(cam2[0], cam2[1], cam2[2], c='m', marker='*')
+        ax.scatter(pp2[0], pp2[1], pp2[2], c='m', marker='o')
+        ax.scatter(0, 0, z, c='g', marker='*')
+        ax.scatter(x2, y2, z2, c='m', marker='o')
+        ax.plot([0, x1], [0, y1], [0, z1], c='g', marker='*')
+        ax.plot([cam2[0], x2], [cam2[1], y2], [cam2[2], z2], c='m', marker='*')
+        ax.plot([0, x0], [0, y0], [0, z0], c='b', marker='*')
+        plt.xlim(-750, 750)
+        # print(ymin)
+        plt.ylim(-200, 200)
+        # print(zmin)
+        ax.set_zlim(-2, 1000)
+        plt.show()
+
     def reconstructPoint(self, point1, point2, plot=False):
         z = self.cam.focal
         w, h = self.cam.imgsize
@@ -54,7 +105,7 @@ class Reconstructor:
         # (0,0,z) - центр первого кадра в базисе первой камеры, считаем центр второго кадра..
         pp2 = np.dot(self.rotMat, np.array([0+tx,0+ty,z+tz]))  # точка центра после переноса
         #cam2 = [pp2[0][0], pp2[1][0], pp2[2][0]-z] # переместили камеру по z-координате от точки центра
-        pp2 = [pp2[0][0], pp2[1][0], pp2[2][0]] # numpy-евская херня
+        pp2 = [pp2[0][0], pp2[1][0], pp2[2][0]] # numpy-евская штука
         r1 = [-w / 2, -h / 2, z]
         r2 = [-w / 2, h / 2, z]
         r3 = [w / 2, h / 2, z]
@@ -87,62 +138,10 @@ class Reconstructor:
         x0 = T * x1
         y0 = T * y1
         z0 = T * z1
-
         if (plot):
-            from mpl_toolkits.mplot3d import Axes3D
-            from matplotlib import pyplot as plt
-            #print([x0[0], y0[0], z0[0]])
+            self.plotReconstructed(w, h, z, r21, r22, r23, cam2, pp2, x0, y0, z0, x1, y1, z1, x2, y2, z2, tx, ty, tz)
 
-            fig = plt.figure()
-            ax = fig.add_subplot(111, projection='3d')
-            from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-
-            #r1 = [-w/2, -h/2, z]
-            #r2 = [-w/2,  h/2, z]
-            #r3 = [w/2,   h/2, z]
-            r4 = [w/2,  -h/2, z]
-            # img1
-            x1ar = [-w/2, -w/2, +w/2, +w/2, -w/2]
-            y1ar = [-h/2, +h/2, +h/2, -h/2, -h/2]
-            z1ar = [   z,    z,    z,    z,    z]
-
-            #r21 = np.dot(self.rotMat, np.array([r1[0] + tx, r1[1] + ty, r1[2] + tz]))
-            #r22 = np.dot(self.rotMat, np.array([r2[0] + tx, r2[1] + ty, r2[2] + tz]))
-            #r23 = np.dot(self.rotMat, np.array([r3[0] + tx, r3[1] + ty, r3[2] + tz]))
-            r24 = np.dot(self.rotMat, np.array([r4[0] + tx, r4[1] + ty, r4[2] + tz]))
-            #r21 = [r21[0][0], r21[1][0], r21[2][0]]
-            #r22 = [r22[0][0], r22[1][0], r22[2][0]]
-            #r23 = [r23[0][0], r23[1][0], r23[2][0]]
-            r24 = [r24[0][0], r24[1][0], r24[2][0]]
-            # img2
-            x2ar = [r21[0], r22[0], r23[0], r24[0], r21[0]]
-            y2ar = [r21[1], r22[1], r23[1], r24[1], r21[1]]
-            z2ar = [r21[2], r22[2], r23[2], r24[2], r21[2]]
-            #verts = [zip(x, y, z)]
-            #ax.add_collection3d(Poly3DCollection(verts))
-            #ax.scatter(0, 0, z-, c='g', marker='*')
-            #ax.plot([0], [0], [0], c='g')
-            ax.plot(x1ar, y1ar, z1ar, c='g')
-            ax.plot(x2ar, y2ar, z2ar, c='m')
-            ax.scatter(cam2[0], cam2[1], cam2[2], c='m', marker='*')
-            ax.scatter(pp2[0], pp2[1], pp2[2], c='m', marker='o')
-            ax.scatter(0, 0, z, c='g', marker='*')
-            ax.scatter(x2, y2, z2, c='m',marker='o')
-            ax.plot([0, x1], [0, y1], [0, z1], c='g',marker='*')
-            ax.plot([cam2[0], x2], [cam2[1], y2], [cam2[2], z2], c='m',marker='*')
-            ax.plot([0, x0], [0, y0], [0, z0], c='b', marker='*')
-            plt.xlim(-750, 750)
-            # print(ymin)
-            plt.ylim(-200, 200)
-            # print(zmin)
-            ax.set_zlim(-2, 1000)
-            plt.show()
-        #print([x0[0], y0[0], z0[0]])
-        if(z0[0] >= 0):
-            return [x0[0], y0[0], z0[0]]
-        else:
-            #print("точка за камерой")
-            return [0, 0, 0]
+        return [x0[0], y0[0], z0[0]]
 
     def pointCloud(self, pts1, pts2, plot=False):
         EPS = 0.001
@@ -153,7 +152,9 @@ class Reconstructor:
         z = self.cam.focal
         w, h = self.cam.imgsize
         for i in range(0, len(pts1)):
-            point3D = self.reconstructPoint(pts1[i], pts2[i],plot)
+            point3D = self.reconstructPoint(pts1[i], pts2[i], plot)
+            if (point3D is None):
+                continue
             points3Dx.append(point3D[0])
             points3Dy.append(point3D[1])
             points3Dz.append(point3D[2])
@@ -167,7 +168,7 @@ class Reconstructor:
         args = zip(points3Dx, points3Dy, points3Dz)
         return equation, args
 
-    def pixelOnRoad(self, img1, img2, plane):
+    def pointsOnRoad(self, img1, img2, plane):
         road_pts1 = []
         road_pts2 = []
         height, width, depth = img1.shape
@@ -186,6 +187,8 @@ class Reconstructor:
                 pts1.append(point1)
                 pts2.append(point2)
                 point3D = self.reconstructPoint(point1, point2)
+                if (point3D is None):
+                    continue
                 A, B, C, D = plane[0], plane[1], plane[2], plane[3]
                 x, y, z = point3D[0], point3D[1], point3D[2]
                 plane = [A, B, C, D]

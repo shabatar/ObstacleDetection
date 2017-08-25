@@ -3,6 +3,7 @@ import numpy as np
 import math
 from visodometry import Geometry
 from constants import MagicConstants
+from rectangle import *
 
 class Cluster:
     def __init__(self, oldpts, newpts):
@@ -44,7 +45,7 @@ class Cluster:
         clusters = []
         for clust1, clust2 in zip(clustersold, clustersnew):
             clust = []
-            for p1, p2 in zip(clust1, clust2):
+            for p1, p2 in zip(clust1, clust2): # old, new
                 v = [p1[0] - p2[0], p1[1] - p2[1]]
                 clust.append(v)
             clusters.append(clust)
@@ -60,7 +61,6 @@ class Cluster:
                     if (alpha < MagicConstants.critAlpha):
                         cnt += 1
             if (cnt <= (len(cluster) ** 2) // 4):  # bad cluster
-                outclusters.append([0])
                 continue
             else:
                 outclusters.append(cluster)
@@ -70,8 +70,9 @@ class Cluster:
         newclusters = []
         oldclusters = []
         for clust1, clust2 in zip(newclust, vectclust):
-            if (len(clust2) == 1):  # it's a point, bro! old clusters should not be recovered
-                continue
+            if (len(clust2) == 1):  # it's a single point
+                oldclusters.append([(clust1[0][0], clust1[0][1])])
+                newclusters.append([(clust1[0][0], clust1[0][1])])
             else:
                 oldclust = []
                 for p1, p2 in zip(clust1, clust2):
@@ -84,7 +85,6 @@ class Cluster:
     def minDistToCluster(self, clust1, clust2, reconst):
         minDist = 1e6
         for p1, p2 in zip(clust1, clust2):
-            # print("mindist")
             p3d = reconst.reconstructPoint(p1, p2)
             if p3d[2] < minDist:
                 minDist = abs(p3d[2])
@@ -95,7 +95,27 @@ class Cluster:
         for clust1, clust2 in zip(clusts1, clusts2):
             di = self.minDistToCluster(clust1, clust2, reconst)
             if (di != 1e6):
-                print(di)
-                print(di * scaleFactor / 100)
                 d.append(di * scaleFactor / 100)
         return d
+
+    def unionClustToRect(self, clusters1, clusters2):
+        rects1 = []
+        rects2 = []
+        for cluster in clusters1:
+            if (len(cluster) < MagicConstants.minPinClust):
+                continue
+            maxX = max(cluster, key=lambda p: p[0])[0]
+            maxY = max(cluster, key=lambda p: p[1])[1]
+            minX = min(cluster, key=lambda p: p[0])[0]
+            minY = min(cluster, key=lambda p: p[1])[1]
+            rects1.append(Rectangle(minX, maxY, maxX, minY))
+        for cluster in clusters2:
+            if (len(cluster) < MagicConstants.minPinClust):
+                continue
+            maxX = max(cluster, key=lambda p: p[0])[0]
+            maxY = max(cluster, key=lambda p: p[1])[1]
+            minX = min(cluster, key=lambda p: p[0])[0]
+            minY = min(cluster, key=lambda p: p[1])[1]
+            rects2.append(Rectangle(minX, maxY, maxX, minY))
+        rects = unionRects(rects1,rects2)
+        return rects

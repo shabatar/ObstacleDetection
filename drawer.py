@@ -136,7 +136,7 @@ class Drawer:
         color = color or self.color
         frame1 = cv2.imread(imgsrc)
         for rect in rects:
-            minX, maxY, maxX, minY = rect[0][0], rect[0][1], rect[1][0], rect[1][1]
+            minX, maxY, maxX, minY = rect.minX, rect.maxY, rect.maxX, rect.minY
             #print(minY)
             cv2.rectangle(frame1, (minX, maxY), (maxX, minY), color, 3)
         #cv2.imwrite('kek.png',frame1)
